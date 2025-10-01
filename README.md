@@ -57,7 +57,7 @@
 
 ## Support
 
-- Email: binobinos.dev@gmail.com
+- Email: 16launcher@gmail.com
 - Website: [https://16luncher.ru](https://16luncher.ru)
 - Issues: [GitHub Issues](https://github.com/launcherdev11/16Launcher/issues)
 
