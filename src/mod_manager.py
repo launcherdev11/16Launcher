@@ -8,40 +8,95 @@ from functools import lru_cache
 
 import requests
 
-from config import MODS_DIR, RESOURCEPACKS_DIR, SHADERPACKS_DIR
+from config import MODS_DIR
+from config import RESOURCEPACKS_DIR
+from config import SHADERPACKS_DIR
+from util import load_settings
+
 
 
 class ModManager:
     @staticmethod
+    def get_mods_directory() -> str:
+        """Получает актуальный путь к папке модов из настроек"""
+        settings = load_settings()
+        mods_dir = settings.get('mods_directory', MODS_DIR)
+        logging.debug(f'Папка модов из настроек: {mods_dir}')
+        return mods_dir
+    
+    @staticmethod
     def get_mods_list(version: str) -> list[str]:
-        """Получает список установленных модов для указанной версии"""
-        version_mods_dir = os.path.join(MODS_DIR, version)
-        if not os.path.exists(version_mods_dir):
-            return []
-
-        return [f for f in os.listdir(version_mods_dir) if f.endswith('.jar') or f.endswith('.zip')]
+        """Получает список установленных модов для конкретной версии"""
+        base_mods_dir = ModManager.get_mods_directory()
+        version_mods_dir = os.path.join(base_mods_dir, version)
+        
+        mods = []
+        
+        # Сначала проверяем папку версии
+        if os.path.exists(version_mods_dir):
+            try:
+                version_mods = [f for f in os.listdir(version_mods_dir) 
+                              if f.endswith('.jar') or f.endswith('.zip')]
+                mods.extend(version_mods)
+                logging.debug(f'Найдено {len(version_mods)} модов в папке версии {version}')
+            except Exception as e:
+                logging.exception(f'Ошибка чтения папки версии {version_mods_dir}: {e}')
+        
+        # Затем проверяем базовую папку модов
+        if os.path.exists(base_mods_dir):
+            try:
+                base_mods = [f for f in os.listdir(base_mods_dir) 
+                           if f.endswith('.jar') or f.endswith('.zip')]
+                # Добавляем только те моды, которых еще нет в списке
+                for mod in base_mods:
+                    if mod not in mods:
+                        mods.append(mod)
+                logging.debug(f'Найдено {len(base_mods)} модов в базовой папке')
+            except Exception as e:
+                logging.exception(f'Ошибка чтения базовой папки модов {base_mods_dir}: {e}')
+        
+        logging.debug(f'Всего модов для версии {version}: {len(mods)}')
+        return mods
 
     @staticmethod
     def install_mod_from_file(file_path: str, version: str) -> tuple[bool, str]:
-        """Устанавливает мод из файла"""
+        """Устанавливает мод из файла в папку версии"""
         try:
-            os.makedirs(os.path.join(MODS_DIR, version), exist_ok=True)
-            dest_path = os.path.join(MODS_DIR, version, os.path.basename(file_path))
+            base_mods_dir = ModManager.get_mods_directory()
+            version_mods_dir = os.path.join(base_mods_dir, version)
+            os.makedirs(version_mods_dir, exist_ok=True)
+            dest_path = os.path.join(version_mods_dir, os.path.basename(file_path))
             shutil.copy(file_path, dest_path)
+            logging.info(f'Мод установлен: {dest_path}')
             return True, 'Мод успешно установлен!'
         except Exception as e:
+            logging.exception(f'Ошибка установки мода: {e}')
             return False, f'Ошибка установки мода: {e!s}'
 
     @staticmethod
     def remove_mod(mod_name: str, version: str) -> tuple[bool, str]:
-        """Удаляет мод"""
+        """Удаляет мод из папки версии или базовой папки"""
         try:
-            mod_path = os.path.join(MODS_DIR, version, mod_name)
-            if os.path.exists(mod_path):
-                os.remove(mod_path)
+            base_mods_dir = ModManager.get_mods_directory()
+            version_mods_dir = os.path.join(base_mods_dir, version)
+            
+            # Сначала ищем в папке версии
+            version_mod_path = os.path.join(version_mods_dir, mod_name)
+            if os.path.exists(version_mod_path):
+                os.remove(version_mod_path)
+                logging.info(f'Мод удален из папки версии: {version_mod_path}')
                 return True, 'Мод успешно удален'
+            
+            # Если не найден в папке версии, ищем в базовой папке
+            base_mod_path = os.path.join(base_mods_dir, mod_name)
+            if os.path.exists(base_mod_path):
+                os.remove(base_mod_path)
+                logging.info(f'Мод удален из базовой папки: {base_mod_path}')
+                return True, 'Мод успешно удален'
+                
             return False, 'Мод не найден'
         except Exception as e:
+            logging.exception(f'Ошибка удаления мода: {e}')
             return False, f'Ошибка удаления мода: {e!s}'
 
     @staticmethod
@@ -127,29 +182,41 @@ class ModManager:
     def download_modrinth_mod(mod_id: str, version: str) -> tuple[bool, str]:
         """Скачивает мод с Modrinth"""
         try:
+            logging.info(f'Начинаем скачивание мода {mod_id} для версии {version}')
             # Получаем информацию о файле
             response = requests.get(
                 f'https://api.modrinth.com/v2/project/{mod_id}/version',
             )
             if response.status_code != 200:
+                logging.error(f'Ошибка получения информации о моде {mod_id}: {response.status_code}')
                 return False, 'Не удалось получить информацию о моде'
 
             versions = response.json()
+            logging.info(f'Найдено {len(versions)} версий мода {mod_id}')
             for v in versions:
                 if version in v['game_versions']:
                     file_url = v['files'][0]['url']
                     file_name = v['files'][0]['filename']
+                    
+                    logging.info(f'Скачиваем мод {file_name} с {file_url}')
 
-                    # Скачиваем файл
-                    os.makedirs(os.path.join(MODS_DIR, version), exist_ok=True)
-                    dest_path = os.path.join(MODS_DIR, version, file_name)
+                    # Скачиваем файл в папку версии
+                    base_mods_dir = ModManager.get_mods_directory()
+                    version_mods_dir = os.path.join(base_mods_dir, version)
+                    os.makedirs(version_mods_dir, exist_ok=True)
+                    dest_path = os.path.join(version_mods_dir, file_name)
 
                     response = requests.get(file_url, stream=True)
                     if response.status_code == 200:
                         with open(dest_path, 'wb') as f:
-                            response.raw.decode_content = True
-                            shutil.copyfileobj(response.raw, f)
+                            for chunk in response.iter_content(chunk_size=8192):
+                                if chunk:
+                                    f.write(chunk)
+                        logging.info(f'Мод {file_name} успешно установлен в {dest_path}')
                         return True, 'Мод успешно установлен!'
+                    else:
+                        logging.error(f'Ошибка скачивания файла: {response.status_code}')
+            logging.warning(f'Не найдена подходящая версия мода {mod_id} для Minecraft {version}')
             return False, 'Не найдена подходящая версия мода'
         except Exception as e:
             return False, f'Ошибка загрузки мода: {e!s}'
@@ -175,8 +242,9 @@ class ModManager:
                     file_name = file['fileName']
 
                     # Скачиваем файл
-                    os.makedirs(os.path.join(MODS_DIR, version), exist_ok=True)
-                    dest_path = os.path.join(MODS_DIR, version, file_name)
+                    mods_dir = ModManager.get_mods_directory()
+                    os.makedirs(os.path.join(mods_dir, version), exist_ok=True)
+                    dest_path = os.path.join(mods_dir, version, file_name)
 
                     response = requests.get(file_url, stream=True)
                     if response.status_code == 200:
@@ -192,10 +260,11 @@ class ModManager:
     def create_modpack(version: str, mods: list[str], output_path: str) -> tuple[bool, str]:
         """Создает сборку модов"""
         try:
+            mods_dir = ModManager.get_mods_directory()
             with zipfile.ZipFile(output_path, 'w') as zipf:
                 # Добавляем моды
                 for mod in mods:
-                    mod_path = os.path.join(MODS_DIR, version, mod)
+                    mod_path = os.path.join(mods_dir, version, mod)
                     if os.path.exists(mod_path):
                         zipf.write(mod_path, os.path.join('mods', mod))
 
@@ -210,7 +279,7 @@ class ModManager:
                     'files': [],
                 }
 
-                manifest_path = os.path.join(MODS_DIR, 'manifest.json')
+                manifest_path = os.path.join(mods_dir, 'manifest.json')
                 with open(manifest_path, 'w') as f:
                     json.dump(manifest, f, indent=4)
                 zipf.write(manifest_path, 'manifest.json')
@@ -222,7 +291,6 @@ class ModManager:
 
     @staticmethod
     def get_mod_categories(source: str = 'modrinth') -> list[str]:
-        """Получает список доступных категорий модов"""
         if source == 'modrinth':
             try:
                 response = requests.get('https://api.modrinth.com/v2/tag/category')
@@ -234,7 +302,6 @@ class ModManager:
 
     @staticmethod
     def get_mod_details(mod_id: str, source: str = 'modrinth') -> dict[str, Any] | None:
-        """Получает подробную информацию о моде"""
         try:
             if source == 'modrinth':
                 response = requests.get(f'https://api.modrinth.com/v2/project/{mod_id}')
@@ -255,7 +322,6 @@ class ModManager:
 
     @staticmethod
     def get_mod_icon(mod_id: str, source: str = 'modrinth') -> str | None:
-        """Получает URL иконки мода"""
         try:
             if source == 'modrinth':
                 response = requests.get(f'https://api.modrinth.com/v2/project/{mod_id}')

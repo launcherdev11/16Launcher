@@ -31,6 +31,7 @@ default_settings = {
     'close_on_launch': False,
     'memory': 4,
     'minecraft_directory': MINECRAFT_DIR,
+    'mods_directory': MODS_DIR,
     'last_username': '',
     'favorites': [],
     'last_version': '',

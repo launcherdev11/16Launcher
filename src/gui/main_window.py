@@ -1,4 +1,3 @@
-# main_window.py
 import json
 import logging
 import os
@@ -8,12 +7,11 @@ import shutil
 import subprocess
 import traceback
 import webbrowser
-from datetime import datetime
 
 import requests
 from minecraft_launcher_lib.utils import get_version_list
 from PyQt5.QtCore import QSize, Qt
-from PyQt5.QtGui import QCloseEvent, QIcon, QFont
+from PyQt5.QtGui import QCloseEvent, QIcon
 from PyQt5.QtWidgets import (
     QApplication,
     QComboBox,
@@ -33,7 +31,6 @@ from PyQt5.QtWidgets import (
     QToolButton,
     QVBoxLayout,
     QWidget,
-    QTextEdit,
 )
 
 import constants
@@ -103,14 +100,10 @@ class MainWindow(QMainWindow):
         'sidebar_layout',
         'splash',
         'start_progress_label',
-        'start_progress',
         'support_button',
         'telegram_button',
         'toggle_sidebar_button',
         'username',
-        # NOTE: не забудьте, что если у вас уже была логика со slots — возможно
-        # вы захотите добавить сюда все дополнительные поля, но оригинальный
-        # код работал и без явного указания всех атрибутов.
     )
 
     def __init__(self) -> None:
@@ -141,7 +134,7 @@ class MainWindow(QMainWindow):
         super().__init__()
 
         self.splash.update_progress(2, 'Установка заголовка окна...')
-        self.setWindowTitle('16Launcher 1.0.2')
+        self.setWindowTitle('16Launcher 1.0.3')
 
         self.splash.update_progress(3, 'Установка размера окна...')
         self.setFixedSize(1280, 720)
@@ -175,11 +168,9 @@ class MainWindow(QMainWindow):
         logging.debug('Создаем UI элементы')
         self.splash.update_progress(23, 'Создаем UI элементы')
         self.launch_thread = LaunchThread(self)
-        # Подключаем сигналы (включая лог-сигнал)
         self.launch_thread.state_update_signal.connect(self.state_update)
         self.launch_thread.progress_update_signal.connect(self.update_progress)
         self.launch_thread.close_launcher_signal.connect(self.close_launcher)
-        self.launch_thread.log_signal.connect(self.append_console)
 
         logging.debug('Создаём основной контейнер')
         self.splash.update_progress(25, 'Создаём основной экран')
@@ -462,26 +453,6 @@ class MainWindow(QMainWindow):
 
         form_layout.addLayout(version_row)
 
-        # --- Консоль логов (появляется при старте) ---
-        self.start_console = QTextEdit(self.game_tab)
-        self.start_console.setReadOnly(True)
-        self.start_console.setVisible(False)
-        self.start_console.setFixedHeight(160)
-        # стиль для читабельности
-        font = QFont('Courier New')
-        font.setPointSize(10)
-        self.start_console.setFont(font)
-        self.start_console.setStyleSheet("""
-            QTextEdit {
-                background-color: #1e1e1e;
-                color: #e6e6e6;
-                border: 1px solid #333;
-                border-radius: 6px;
-                padding: 8px;
-            }
-        """)
-        form_layout.addWidget(self.start_console)
-
         # Третья строка — Играть и Сменить скин
         bottom_row = QHBoxLayout()
         bottom_row.setSpacing(10)
@@ -539,7 +510,7 @@ class MainWindow(QMainWindow):
             padding: 5px;
         """)
         layout.addWidget(self.motd_label)
-        layout.addStretch()
+        layout.addStretch()  # Добавляем растягивающееся пространство
 
         self.show_message_of_the_day()
 
@@ -1017,12 +988,40 @@ class MainWindow(QMainWindow):
             if v['type'] == 'release' or (show_snapshots and v['type'] == 'snapshot'):
                 version_id = v['id']
                 if not show_only_favorites or version_id in self.favorites:
-                    self.version_select.addItem(version_id)
+                    if v['type'] == 'snapshot':
+                        display_text = f"{version_id} (snapshot)"
+                    else:
+                        display_text = version_id
+                    self.version_select.addItem(display_text, version_id)
 
-        if current_text and self.version_select.findText(current_text) >= 0:
-            self.version_select.setCurrentText(current_text)
+        # Восстанавливаем выбранную версию
+        if current_text:
+            # Ищем по отображаемому тексту
+            index = self.version_select.findText(current_text)
+            if index >= 0:
+                self.version_select.setCurrentIndex(index)
+            else:
+                # Ищем по ID версии (для совместимости со старыми настройками)
+                current_version_id = current_text.replace(' (snapshot)', '')
+                for i in range(self.version_select.count()):
+                    if self.version_select.itemData(i) == current_version_id:
+                        self.version_select.setCurrentIndex(i)
+                        break
 
         self.update_favorite_button()
+
+    def get_selected_version_id(self) -> str:
+        """Извлекает ID версии из выбранного элемента комбобокса"""
+        current_index = self.version_select.currentIndex()
+        if current_index >= 0:
+            version_id = self.version_select.currentData()
+            if version_id:
+                return version_id
+        
+        current_text = self.version_select.currentText()
+        if current_text:
+            return current_text.replace(' (snapshot)', '')
+        return ''
 
     def toggle_sidebar(self) -> None:
         is_visible = self.sidebar.isVisible()
@@ -1037,7 +1036,7 @@ class MainWindow(QMainWindow):
 
     def toggle_favorite(self) -> None:
         """Добавляет или удаляет версию из избранного"""
-        version = self.version_select.currentText()
+        version = self.get_selected_version_id()
         if not version:
             return
 
@@ -1046,18 +1045,15 @@ class MainWindow(QMainWindow):
         else:
             self.favorites.append(version)
 
-        # Сохраняем изменения в настройках
         self.settings['favorites'] = self.favorites
         save_settings(self.settings)
 
-        # Обновляем кнопку и список версий (если в режиме избранных)
         self.update_favorite_button()
         if self.version_type_select.currentText() == 'Избранные':
             self.update_version_list()
 
     def update_favorite_button(self) -> None:
-        """Обновляет состояние кнопки избранного"""
-        version = self.version_select.currentText()
+        version = self.get_selected_version_id()
         if not version:
             self.favorite_button.setChecked(False)
             self.favorite_button.setEnabled(False)
@@ -1071,10 +1067,8 @@ class MainWindow(QMainWindow):
 
     def get_selected_memory(self) -> None:
         """Возвращает выбранное количество памяти в мегабайтах"""
-        return self.settings_tab.memory_slider.value() * 1024  # Конвертируем ГБ в МБ
-
+        return self.settings_tab.memory_slider.value() * 1024 
     def load_skin(self) -> None:
-        # Создаем диалоговое окно выбора источника скина
         source_dialog = QDialog(self)
         source_dialog.setWindowTitle('Выберите источник скина')
         source_dialog.setFixedSize(300, 200)
@@ -1243,6 +1237,41 @@ class MainWindow(QMainWindow):
             padding: 5px;
             outline: none;
         }
+        QComboBox QAbstractItemView::item {
+            padding: 6px 10px;
+            border: none;
+            outline: none;
+        }
+        QComboBox QAbstractItemView::item:selected {
+            background-color: #555;
+            border: none;
+            outline: none;
+        }
+        /* Scrollbar inside QComboBox popup (dark) */
+        QComboBox QAbstractItemView QScrollBar:vertical {
+            border: none;
+            background: #2e2e2e;
+            width: 10px;
+            margin: 0px;
+            border-radius: 5px;
+        }
+        QComboBox QAbstractItemView QScrollBar::handle:vertical {
+            background: #555555;
+            min-height: 18px;
+            border-radius: 5px;
+        }
+        QComboBox QAbstractItemView QScrollBar::handle:vertical:hover {
+            background: #777777;
+        }
+        QComboBox QAbstractItemView QScrollBar::add-line:vertical,
+        QComboBox QAbstractItemView QScrollBar::sub-line:vertical {
+            height: 0px;
+            background: transparent;
+        }
+        QComboBox QAbstractItemView QScrollBar::add-page:vertical,
+        QComboBox QAbstractItemView QScrollBar::sub-page:vertical {
+            background: #2e2e2e; /* track color to remove white gap */
+        }
         QProgressBar {
             border: 1px solid #555555;
             background-color: #333333;
@@ -1295,6 +1324,7 @@ class MainWindow(QMainWindow):
             background-color: #252525;
             border-right: 1px solid #444;
         }
+        /* Unified scrollbars (dark) */
         QScrollBar:vertical {
             border: none;
             background: #2e2e2e;
@@ -1309,6 +1339,40 @@ class MainWindow(QMainWindow):
         }
         QScrollBar::handle:vertical:hover {
             background: #777777;
+        }
+        QScrollBar::add-line:vertical,
+        QScrollBar::sub-line:vertical {
+            height: 0px;
+            background: transparent;
+            border: none;
+        }
+        QScrollBar:horizontal {
+            border: none;
+            background: #2e2e2e;
+            height: 12px;
+            margin: 0px;
+            border-radius: 6px;
+        }
+        QScrollBar::handle:horizontal {
+            background: #555555;
+            min-width: 20px;
+            border-radius: 6px;
+        }
+        QScrollBar::handle:horizontal:hover {
+            background: #777777;
+        }
+        QScrollBar::add-line:horizontal,
+        QScrollBar::sub-line:horizontal {
+            width: 0px;
+            background: transparent;
+            border: none;
+        }
+        /* Remove white gaps on page areas */
+        QScrollBar::add-page:vertical,
+        QScrollBar::sub-page:vertical,
+        QScrollBar::add-page:horizontal,
+        QScrollBar::sub-page:horizontal {
+            background: #2e2e2e;
         }
         """
 
@@ -1404,6 +1468,41 @@ class MainWindow(QMainWindow):
             border: 1px solid #cccccc;
             padding: 5px;
             outline: none;
+        }
+        QComboBox QAbstractItemView::item {
+            padding: 6px 10px;
+            border: none;
+            outline: none;
+        }
+        QComboBox QAbstractItemView::item:selected {
+            background-color: #e0e0e0;
+            border: none;
+            outline: none;
+        }
+        /* Scrollbar inside QComboBox popup (light) */
+        QComboBox QAbstractItemView QScrollBar:vertical {
+            border: none;
+            background: #f5f5f5;
+            width: 10px;
+            margin: 0px;
+            border-radius: 5px;
+        }
+        QComboBox QAbstractItemView QScrollBar::handle:vertical {
+            background: #c0c0c0;
+            min-height: 18px;
+            border-radius: 5px;
+        }
+        QComboBox QAbstractItemView QScrollBar::handle:vertical:hover {
+            background: #a0a0a0;
+        }
+        QComboBox QAbstractItemView QScrollBar::add-line:vertical,
+        QComboBox QAbstractItemView QScrollBar::sub-line:vertical {
+            height: 0px;
+            background: transparent;
+        }
+        QComboBox QAbstractItemView QScrollBar::add-page:vertical,
+        QComboBox QAbstractItemView QScrollBar::sub-page:vertical {
+            background: #f5f5f5; /* track color to remove white gap */
         }
         QProgressBar {
             border: 1px solid #cccccc;
@@ -1510,7 +1609,7 @@ class MainWindow(QMainWindow):
             )
         if hasattr(self, 'favorite_button'):
             # Для кнопки избранного используем цвет вместо иконки
-            version = self.version_select.currentText()
+            version = self.get_selected_version_id()
             if version:
                 self.favorite_button.setStyleSheet(
                     'QPushButton {color: %s;}' % ('gold' if version in self.favorites else 'gray'),
@@ -1543,7 +1642,7 @@ class MainWindow(QMainWindow):
     def closeEvent(self, event: QCloseEvent | None) -> None:
         """Переопределяем метод закрытия окна для сохранения настроек"""
         # Сохраняем текущий выбор
-        current_version = self.version_select.currentText()
+        current_version = self.get_selected_version_id()
         if current_version:
             self.settings['last_version'] = current_version
             self.settings['last_loader'] = self.loader_select.currentData()
@@ -1566,7 +1665,7 @@ class MainWindow(QMainWindow):
                 QMessageBox.warning(self, 'Ошибка', 'Введите имя игрока!')
                 return
 
-            version = self.version_select.currentText()
+            version = self.get_selected_version_id()
             loader_type = self.loader_select.currentData()
             memory_mb = self.get_selected_memory()
             close_on_launch = self.settings_tab.close_on_launch_checkbox.isChecked()
@@ -1580,6 +1679,7 @@ class MainWindow(QMainWindow):
                 f'Close on launch: {close_on_launch}',
             )
 
+            # Handle Ely.by session
             if not hasattr(self, 'ely_session'):
                 self.ely_session = None
                 logging.info('[LAUNCHER] No Ely.by session found')
@@ -1594,9 +1694,9 @@ class MainWindow(QMainWindow):
 
             # Handle authlib for Ely.by
             if hasattr(self, 'ely_session') and self.ely_session:
-                logging.info('[LAUNCH THREAD] Ely.by session detected, checking authlib...')
+                logging.info('[LAUNCHER] Ely.by session detected, checking authlib...')
                 if not os.path.exists(AUTHLIB_JAR_PATH):
-                    logging.info('[LAUNCH THREAD] Downloading authlib-injector...')
+                    logging.info('[LAUNCHER] Downloading authlib-injector...')
                     if not download_authlib_injector():
                         QMessageBox.critical(
                             self,
@@ -1610,16 +1710,11 @@ class MainWindow(QMainWindow):
             self.settings['last_loader'] = loader_type
             save_settings(self.settings)
 
-            # Show progress UI and console
+            # Show progress UI
             self.start_progress_label.setText('Подготовка к запуску...')
             self.start_progress_label.setVisible(True)
             self.start_progress.setVisible(True)
-            # показать консоль
-            self.start_console.clear()
-            self.start_console.setVisible(True)
-            self.append_console('Подготовка к запуску...')
-
-            QApplication.processEvents() 
+            QApplication.processEvents()  # Force UI update
 
             logging.info('[LAUNCHER] Starting launch thread...')
             self.launch_thread.launch_setup(
@@ -1640,15 +1735,6 @@ class MainWindow(QMainWindow):
                 f'Не удалось запустить игру: {e!s}',
             )
 
-    def append_console(self, text: str) -> None:
-        try:
-            ts = datetime.now().strftime('%H:%M:%S')
-            self.start_console.append(f'[{ts}] {text}')
-
-            self.start_console.verticalScrollBar().setValue(self.start_console.verticalScrollBar().maximum())
-        except Exception:
-            logging.exception('Ошибка при добавлении в консоль')
-
     def update_progress(self, current: int, total: int, text: str) -> None:
         self.start_progress.setMaximum(total)
         self.start_progress.setValue(current)
@@ -1658,13 +1744,10 @@ class MainWindow(QMainWindow):
     def state_update(self, is_running: bool) -> None:
         if is_running:
             self.start_button.setEnabled(False)
-            self.start_console.setVisible(True)
         else:
             self.start_button.setEnabled(True)
             self.start_progress_label.setVisible(False)
             self.start_progress.setVisible(False)
-            self.append_console('Процесс запуска завершён.')
-            self.start_console.setVisible(True)
 
     def show_message_of_the_day(self) -> None:
         if hasattr(self, 'motd_label') and self.settings.get('show_motd', True):

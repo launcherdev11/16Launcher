@@ -72,7 +72,7 @@ class LaunchThread(QThread):
                     f'-Xms{min(self.memory_mb // 2, 2048)}M',
                 ],
                 'launcherName': '16Launcher',
-                'launcherVersion': '1.0.2',
+                'launcherVersion': '1.0.3',
                 'demo': False,
                 'fullscreen': 'false',
             }

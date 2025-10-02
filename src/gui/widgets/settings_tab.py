@@ -60,24 +60,7 @@ class SettingsTab(QWidget):
         scroll.setWidgetResizable(True)
         scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         scroll.setStyleSheet("""
-            QScrollArea {
-                border: none;
-                background-color: transparent;
-            }
-            QScrollBar:vertical {
-                border: none;
-                background: #2d2d2d;
-                width: 8px;
-                margin: 0px;
-            }
-            QScrollBar::handle:vertical {
-                background: #666666;
-                min-height: 16px;
-                border-radius: 4px;
-            }
-            QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {
-                height: 0px;
-            }
+            QScrollArea { border: none; background-color: transparent; }
         """)
 
         # Контейнер для всех настроек
@@ -181,14 +164,14 @@ class SettingsTab(QWidget):
                 border-radius: 4px;
             }
             QSlider::handle:horizontal {
-                background: #0078d7;
-                border: none;
+                background: #bbbbbb;
+                border: 1px solid #777777;
                 width: 18px;
                 margin: -5px 0;
                 border-radius: 9px;
             }
             QSlider::handle:horizontal:hover {
-                background: #1a88e0;
+                background: #d0d0d0;
             }
         """)
         self.memory_value_label = QLabel('4 ГБ')
@@ -468,11 +451,11 @@ class SettingsTab(QWidget):
             )
             if directory:
                 self.mods_directory_edit.setText(directory)
-                MODS_DIR = directory
                 # Сохраняем в настройках
                 if self.parent_window:
                     self.parent_window.settings['mods_directory'] = directory
                     save_settings(self.parent_window.settings)
+                    logging.info(f'Папка модов изменена на: {directory}')
         except Exception as e:
             logging.exception(f'Ошибка при выборе директории модов: {e}')
             self.show_error_message('Ошибка при выборе директории модов')
@@ -556,9 +539,11 @@ class SettingsTab(QWidget):
             )
             if directory:
                 self.directory_edit.setText(directory)
-                MINECRAFT_DIR = directory
-                SETTINGS_PATH = os.path.join(MINECRAFT_DIR, 'settings.json')
-                LOG_FILE = os.path.join(MINECRAFT_DIR, 'launcher_log.txt')
+                # Сохраняем в настройках
+                if self.parent_window:
+                    self.parent_window.settings['minecraft_directory'] = directory
+                    save_settings(self.parent_window.settings)
+                    logging.info(f'Папка игры изменена на: {directory}')
         except Exception as e:
             logging.exception(f'Ошибка при выборе директории: {e}')
             self.show_error_message('Ошибка при выборе директории')

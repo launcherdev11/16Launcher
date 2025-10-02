@@ -22,6 +22,7 @@ from PyQt5.QtWidgets import (
     QInputDialog,
     QLabel,
     QLineEdit,
+    QListView,
     QListWidget,
     QTreeWidget,
     QTreeWidgetItem,
@@ -126,6 +127,40 @@ class ModpackTab(QWidget):
         self.filter_combo.addItems(['Все', 'Forge', 'Fabric'])
         self.filter_combo.setCurrentIndex(0)
         self.filter_combo.currentIndexChanged.connect(self.filter_modpacks)
+        # unified combo style (same as Mods tab)
+        combo_style = """
+            QComboBox {
+                background-color: #444444;
+                color: #f1f1f1;
+                border: 1px solid #555555;
+                padding: 10px;
+                border-radius: 10px;
+                font-size: 14px;
+            }
+            QComboBox::drop-down {
+                subcontrol-origin: padding;
+                subcontrol-position: top right;
+                width: 30px;
+                border-left: 1px solid #555;
+                background: #555;
+                border-top-right-radius: 10px;
+                border-bottom-right-radius: 10px;
+            }
+            QComboBox QAbstractItemView {
+                background-color: #333;
+                color: #f1f1f1;
+                selection-background-color: #555;
+                border: 1px solid #444;
+                padding: 5px;
+                outline: none;
+            }
+            QComboBox QAbstractItemView::item { padding: 6px 10px; }
+        """
+        self.filter_combo.setStyleSheet(combo_style)
+        _view = QListView()
+        _view.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        _view.setMaximumHeight(300)
+        self.filter_combo.setView(_view)
         filter_layout.addWidget(self.filter_combo)
         layout.addLayout(filter_layout)
 
@@ -162,13 +197,6 @@ class ModpackTab(QWidget):
                 border-radius: 5px;
                 padding: 8px;
                 font-size: 14px;
-            }
-            QComboBox {
-                background-color: #404040;
-                border: 1px solid #555555;
-                border-radius: 5px;
-                padding: 5px;
-                min-width: 120px;
             }
             QScrollArea {
                 border: none;
@@ -218,21 +246,31 @@ class ModpackTab(QWidget):
             return 0
 
     def _existing_mods_count(self, pack_data: dict[str, Any]) -> int:
-        """Считает только реально существующие файлы модов в каталоге версии."""
+        """Считает только реально существующие файлы модов в каталоге."""
         try:
-            version = pack_data.get('version', '')
-            mods_dir = os.path.join(MODS_DIR, version)
             mods_list: Any = pack_data.get('mods', [])
             if isinstance(mods_list, str):
-                mods_list = json.loads(mods_list)
+                try:
+                    mods_list = json.loads(mods_list)
+                except json.JSONDecodeError:
+                    # Если не JSON, пробуем разделить по запятым
+                    mods_list = [mod.strip() for mod in mods_list.split(',') if mod.strip()]
+                    
             if not isinstance(mods_list, list):
-                return 0
+                return len(mods_list) if mods_list else 0
+                
+            # Просто возвращаем количество элементов в списке
             count = 0
-            for name in mods_list:
-                if os.path.exists(os.path.join(mods_dir, str(name))):
+            for mod_item in mods_list:
+                if isinstance(mod_item, dict):
+                    mod_name = mod_item.get('file') or mod_item.get('name') or ''
+                    if mod_name:
+                        count += 1
+                elif mod_item:
                     count += 1
             return count
-        except Exception:
+        except Exception as e:
+            logging.exception(f'Ошибка подсчета модов: {e}')
             return 0
 
     def create_modpack_card(self, pack_data: dict[str, Any]) -> QFrame:
@@ -385,18 +423,11 @@ class ModpackTab(QWidget):
             l = QLabel(text)
             l.setStyleSheet('background-color:#404040; border: 1px solid #555555; border-radius:12px; padding:6px 10px; font-size:13px;')
             return l
-        mods_field = pack_data.get('mods', [])
-        if isinstance(mods_field, list):
-            mod_count = len(mods_field)
-        elif isinstance(mods_field, str):
-            
-            try:
-                parsed = json.loads(mods_field)
-                mod_count = len(parsed) if isinstance(parsed, list) else 0
-            except Exception:
-                mod_count = 0
-        else:
-            mod_count = 0
+        # Используем улучшенную функцию подсчета модов
+        mod_count = self._existing_mods_count(pack_data)
+        # Если не удалось подсчитать существующие файлы, используем общий подсчет
+        if mod_count == 0:
+            mod_count = self._safe_mod_count(pack_data.get('mods', []))
         badges.addWidget(pill(f"{mod_count} модов"))
         badges.addWidget(pill(pack_data.get('loader', '')))
         badges.addWidget(pill(self.get_modpack_size(pack_data)))
@@ -445,33 +476,50 @@ class ModpackTab(QWidget):
 
         
         def to_list(value: Any) -> list[str]:
-            
+            """Преобразует различные форматы данных в список строк"""
             try:
                 if isinstance(value, list):
                     result: list[str] = []
                     for item in value:
                         if isinstance(item, dict):
-                            name = item.get('file') or item.get('name') or ''
+                            # Ищем имя файла в различных ключах
+                            name = item.get('file') or item.get('name') or item.get('filename') or ''
                             if name:
                                 result.append(str(name))
                         elif item is not None:
-                            result.append(str(item))
+                            item_str = str(item).strip()
+                            if item_str:
+                                result.append(item_str)
                     return result
+                    
                 if isinstance(value, str):
                     s = value.strip()
                     if not s:
                         return []
                     
+                    # Пробуем парсить как JSON
                     try:
                         parsed = json.loads(s)
                         if isinstance(parsed, list):
                             return to_list(parsed)
-                    except Exception:
+                        elif isinstance(parsed, dict):
+                            # Если это словарь, пробуем извлечь имя файла
+                            name = parsed.get('file') or parsed.get('name') or parsed.get('filename') or ''
+                            return [str(name)] if name else []
+                    except (json.JSONDecodeError, TypeError):
                         pass
                     
-                    return [part.strip() for part in s.split(',') if part.strip()]
+                    # Если не JSON, разделяем по запятым
+                    parts = [part.strip() for part in s.split(',') if part.strip()]
+                    return parts
+                    
+                # Для других типов данных
+                if value is not None:
+                    return [str(value)]
+                    
                 return []
-            except Exception:
+            except Exception as e:
+                logging.exception(f'Ошибка преобразования в список: {e}')
                 return []
 
         mods_list = to_list(pack_data.get('mods', []))
@@ -617,46 +665,22 @@ class ModpackTab(QWidget):
         self.status_label.setText(f'Загружено сборок: {len(modpacks)}')
 
     def get_modpack_size(self, pack_data: dict[str, Any]) -> str:
-        total_size = 0
-        version = pack_data.get('version', '')
-        mods_dir = os.path.join(MODS_DIR, version)
-        mods_list = pack_data.get('mods', [])
-        
-        if isinstance(mods_list, str):
-            try:
-                mods_list = json.loads(mods_list)
-            except Exception:
-                mods_list = []
-        
-        if os.path.exists(mods_dir) and isinstance(mods_list, list):
-            for mod in mods_list:
-                mod_path = os.path.join(mods_dir, str(mod))
-                if os.path.exists(mod_path):
-                    try:
-                        total_size += os.path.getsize(mod_path)
-                    except Exception:
-                        pass
-        
-        for key, base_dir in (
-            ('textures', RESOURCEPACKS_DIR),
-            ('shaders', SHADERPACKS_DIR),
-        ):
-            items = pack_data.get(key, [])
-            if isinstance(items, list):
-                for name in items:
-                    p = os.path.join(base_dir, str(name))
-                    try:
-                        if os.path.isdir(p):
-                            for root, _dirs, files in os.walk(p):
-                                for f in files:
-                                    total_size += os.path.getsize(os.path.join(root, f))
-                        elif os.path.exists(p):
-                            total_size += os.path.getsize(p)
-                    except Exception:
-                        pass
-        unit = 'MB'
-        value = total_size / 1024 / 1024
-        return f'{value:.1f} {unit}'
+        try:
+            # Упрощенный подсчет - просто считаем приблизительный размер
+            mods_count = self._existing_mods_count(pack_data)
+            textures_count = len(pack_data.get('textures', []))
+            shaders_count = len(pack_data.get('shaders', []))
+            
+            # Приблизительный размер: 5MB на мод, 10MB на текстуры, 15MB на шейдеры
+            estimated_size = (mods_count * 5) + (textures_count * 10) + (shaders_count * 15)
+            
+            if estimated_size == 0:
+                return "~0 MB"
+            
+            return f"~{estimated_size} MB"
+        except Exception as e:
+            logging.exception(f'Ошибка подсчета размера сборки: {e}')
+            return "N/A"
 
     def show_context_menu(self, pack_data: dict[str, Any]) -> None:
         menu = QMenu(self)
@@ -838,14 +862,26 @@ class ModpackTab(QWidget):
 
         if file_dialog.exec_():
             selected_files = file_dialog.selectedFiles()
-            mods_dir = os.path.join(MODS_DIR, pack_data['version'])
+            base_mods_dir = ModManager.get_mods_directory()
+            version_mods_dir = os.path.join(base_mods_dir, pack_data['version'])
+            
+            # Создаем папку версии если она не существует
+            os.makedirs(version_mods_dir, exist_ok=True)
+            
+            # Выбираем целевую папку (предпочтительно версионную)
+            target_mods_dir = version_mods_dir if os.path.exists(version_mods_dir) else base_mods_dir
 
             for file_path in selected_files:
                 mod_name = os.path.basename(file_path)
-                dest_path = os.path.join(mods_dir, mod_name)
+                dest_path = os.path.join(target_mods_dir, mod_name)
 
                 if not os.path.exists(dest_path):
-                    shutil.copyfile(file_path, dest_path)
+                    try:
+                        shutil.copyfile(file_path, dest_path)
+                        logging.info(f'Мод {mod_name} скопирован в {dest_path}')
+                    except Exception as e:
+                        logging.exception(f'Ошибка копирования мода {mod_name}: {e}')
+                        continue
 
                 if not self.mods_list.findItems(mod_name, Qt.MatchExactly):
                     self.mods_list.addItem(mod_name)
@@ -997,14 +1033,30 @@ class ModpackTab(QWidget):
                     raise ValueError('Отсутствует файл modpack.json в архиве')
 
                 pack_data = json.loads(zipf.read('modpack.json'))
-                mods_dir = os.path.join(MODS_DIR, pack_data['version'])
-                os.makedirs(mods_dir, exist_ok=True)
+                base_mods_dir = ModManager.get_mods_directory()
+                version_mods_dir = os.path.join(base_mods_dir, pack_data['version'])
+                os.makedirs(version_mods_dir, exist_ok=True)
 
-                for mod in pack_data['mods']:
+                mods_list = pack_data['mods']
+                if isinstance(mods_list, str):
                     try:
-                        zipf.extract(f'mods/{mod}', mods_dir)
-                    except KeyError:
-                        logging.warning(f'Мод {mod} отсутствует в архиве')
+                        mods_list = json.loads(mods_list)
+                    except json.JSONDecodeError:
+                        mods_list = [mod.strip() for mod in mods_list.split(',') if mod.strip()]
+
+                for mod_item in mods_list:
+                    # Обрабатываем случай когда мод может быть словарем
+                    if isinstance(mod_item, dict):
+                        mod_name = mod_item.get('file') or mod_item.get('name') or ''
+                    else:
+                        mod_name = str(mod_item)
+                        
+                    if mod_name:
+                        try:
+                            # Извлекаем мод в папку версии
+                            zipf.extract(f'mods/{mod_name}', version_mods_dir)
+                        except KeyError:
+                            logging.warning(f'Мод {mod_name} отсутствует в архиве')
 
                 with open(
                     os.path.join(self.modpacks_dir, f'{pack_data["name"]}.json'),
@@ -1031,11 +1083,30 @@ class ModpackTab(QWidget):
 
             zip_path = os.path.join(export_path, f'{pack_data["name"]}.zip')
             with zipfile.ZipFile(zip_path, 'w') as zipf:
-                mods_dir = os.path.join(MODS_DIR, pack_data['version'])
-                for mod in pack_data['mods']:
-                    mod_path = os.path.join(mods_dir, mod)
-                    if os.path.exists(mod_path):
-                        zipf.write(mod_path, arcname=f'mods/{mod}')
+                base_mods_dir = ModManager.get_mods_directory()
+                version_mods_dir = os.path.join(base_mods_dir, pack_data['version'])
+                
+                # Выбираем папку с модами (версионную или базовую)
+                mods_dir = version_mods_dir if os.path.exists(version_mods_dir) else base_mods_dir
+                
+                mods_list = pack_data['mods']
+                if isinstance(mods_list, str):
+                    try:
+                        mods_list = json.loads(mods_list)
+                    except json.JSONDecodeError:
+                        mods_list = [mod.strip() for mod in mods_list.split(',') if mod.strip()]
+                
+                for mod_item in mods_list:
+                    # Обрабатываем случай когда мод может быть словарем
+                    if isinstance(mod_item, dict):
+                        mod_name = mod_item.get('file') or mod_item.get('name') or ''
+                    else:
+                        mod_name = str(mod_item)
+                        
+                    if mod_name:
+                        mod_path = os.path.join(mods_dir, mod_name)
+                        if os.path.exists(mod_path):
+                            zipf.write(mod_path, arcname=f'mods/{mod_name}')
 
                 zipf.writestr('modpack.json', json.dumps(pack_data))
 
@@ -1050,7 +1121,7 @@ class ModpackTab(QWidget):
     def show_creation_dialog(self):
         dialog = QDialog(self)
         dialog.setWindowTitle('Создание сборки')
-        dialog.setMinimumSize(750, 550)
+        dialog.setMinimumSize(850, 800)
         dialog.resize(900, 600)
 
         layout = QVBoxLayout()
@@ -1083,7 +1154,19 @@ class ModpackTab(QWidget):
         self.pack_loader.addItems(['Forge', 'Fabric'])
 
         form.addRow('Название сборки:', self.pack_name)
-        form.addRow('Версия Minecraft:', self.pack_version)
+        
+        version_row = QHBoxLayout()
+        version_row.addWidget(self.pack_version)
+        use_current_btn = QPushButton('Использовать текущие параметры')
+        use_current_btn.setIcon(QIcon(resource_path('assets/copy.png')))
+        use_current_btn.setIconSize(QSize(16, 16))
+        use_current_btn.clicked.connect(self.use_current_parameters)
+        use_current_btn.setToolTip('Взять версию и модлоадер из главного окна')
+        version_row.addWidget(use_current_btn)
+        version_container = QWidget()
+        version_container.setLayout(version_row)
+        form.addRow('Версия Minecraft:', version_container)
+        
         form.addRow('Модлоадер:', self.pack_loader)
 
         from PyQt5.QtWidgets import QSizePolicy
@@ -1434,7 +1517,7 @@ class ModpackTab(QWidget):
             files = pick_files('Добавить моды', 'Mod files (*.jar *.zip)')
             if not files:
                 return
-            ops = add_files_to(os.path.join(MODS_DIR, self.pack_version.currentText()), files, self.mods_selection)
+            ops = add_files_to(os.path.join(ModManager.get_mods_directory(), self.pack_version.currentText()), files, self.mods_selection)
             self._last_action_step2 = {
                 'type': 'add',
                 'ops': ops,
@@ -1442,7 +1525,7 @@ class ModpackTab(QWidget):
             }
 
         mods_add_btn.clicked.connect(on_mods_add)
-        mods_del_btn.clicked.connect(lambda: handle_delete(self.mods_selection, os.path.join(MODS_DIR, self.pack_version.currentText())))
+        mods_del_btn.clicked.connect(lambda: handle_delete(self.mods_selection, os.path.join(ModManager.get_mods_directory(), self.pack_version.currentText())))
         mods_undo_btn.clicked.connect(handle_undo)
 
         def on_textures_add() -> None:
@@ -1477,7 +1560,7 @@ class ModpackTab(QWidget):
 
         setup_dnd(
             self.mods_selection,
-            lambda: os.path.join(MODS_DIR, self.pack_version.currentText()),
+            lambda: os.path.join(ModManager.get_mods_directory(), self.pack_version.currentText()),
             ('.jar', '.zip'),
         )
         setup_dnd(
@@ -1599,3 +1682,51 @@ class ModpackTab(QWidget):
 
         self.load_modpacks()
         dialog.close()
+
+    def use_current_parameters(self):
+        """Использует текущие параметры из главного окна (версия и модлоадер)"""
+        if not self.parent_window:
+            QMessageBox.warning(self, 'Ошибка', 'Не удалось получить доступ к главному окну')
+            return
+        
+        try:
+            # Получаем текущую версию из главного окна
+            current_version = self.parent_window.version_select.currentText()
+            if current_version:
+                # Находим индекс версии в ComboBox модпака
+                version_index = self.pack_version.findText(current_version)
+                if version_index >= 0:
+                    self.pack_version.setCurrentIndex(version_index)
+                else:
+                    QMessageBox.warning(self, 'Предупреждение', 
+                                      f'Версия "{current_version}" не найдена в списке доступных версий')
+            
+            # Получаем текущий модлоадер из главного окна
+            current_loader_data = self.parent_window.loader_select.currentData()
+            current_loader_text = self.parent_window.loader_select.currentText()
+            
+            # Устанавливаем модлоадер, если это Forge или Fabric
+            if current_loader_data in ['forge', 'fabric']:
+                # Преобразуем в правильный формат для ComboBox модпака
+                loader_text = 'Forge' if current_loader_data == 'forge' else 'Fabric'
+                loader_index = self.pack_loader.findText(loader_text)
+                if loader_index >= 0:
+                    self.pack_loader.setCurrentIndex(loader_index)
+            elif current_loader_data == 'vanilla':
+                # Для vanilla устанавливаем Forge по умолчанию
+                forge_index = self.pack_loader.findText('Forge')
+                if forge_index >= 0:
+                    self.pack_loader.setCurrentIndex(forge_index)
+                QMessageBox.information(self, 'Информация', 
+                                      'Для Vanilla установлен Forge по умолчанию')
+            else:
+                # Для других модлоадеров (OptiFine, Quilt) устанавливаем только версию
+                QMessageBox.information(self, 'Информация', 
+                                      f'Установлена только версия. Модлоадер "{current_loader_text}" не поддерживается для модпаков')
+            
+            QMessageBox.information(self, 'Успешно', 
+                                  f'Параметры обновлены:\nВерсия: {current_version}\nМодлоадер: {self.pack_loader.currentText()}')
+                                  
+        except Exception as e:
+            logging.exception(f'Ошибка при использовании текущих параметров: {e}')
+            QMessageBox.critical(self, 'Ошибка', f'Не удалось применить текущие параметры: {e}')
