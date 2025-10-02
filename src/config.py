@@ -1,3 +1,4 @@
+# config.py
 import os
 
 from minecraft_launcher_lib.utils import get_minecraft_directory, get_version_list
@@ -9,6 +10,8 @@ ELY_BY_INJECT = '-javaagent:{}=ely.by'
 ELY_BY_INJECT_URL = 'https://github.com/yushijinhun/authlib-injector/releases/download/v1.2.5/authlib-injector-1.2.5.jar'
 MINECRAFT_DIR: str = os.path.join(get_minecraft_directory(), '16launcher')
 SKINS_DIR: str = os.path.join(MINECRAFT_DIR, 'skins')
+RESOURCEPACKS_DIR = os.path.join(MINECRAFT_DIR, 'resourcepacks')
+SHADERPACKS_DIR = os.path.join(MINECRAFT_DIR, 'shaderpacks')
 SETTINGS_PATH: str = os.path.join(MINECRAFT_DIR, 'settings.json')
 LOG_FILE: str = os.path.join(MINECRAFT_DIR, 'launcher_log.txt')
 NEWS_FILE: str = os.path.join(MINECRAFT_DIR, 'launcher_news.json')
@@ -28,6 +31,7 @@ default_settings = {
     'close_on_launch': False,
     'memory': 4,
     'minecraft_directory': MINECRAFT_DIR,
+    'mods_directory': MODS_DIR,
     'last_username': '',
     'favorites': [],
     'last_version': '',

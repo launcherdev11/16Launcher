@@ -7,7 +7,7 @@ class Translator:
     language: str = 'ru'
     translations: ClassVar[dict[str, dict[str, str]]] = {
         'ru': {
-            'window_title': '16Launcher 1.0.2',
+            'window_title': '16Launcher 1.0.3',
             'play_button': 'Играть',
             'settings_button': 'Настройки',
             'support_button': 'Поддержать',
@@ -28,7 +28,7 @@ class Translator:
             'launch_error': 'Ошибка запуска',
         },
         'en': {
-            'window_title': '16Launcher 1.0.2',
+            'window_title': '16Launcher 1.0.3',
             'play_button': 'Play',
             'settings_button': 'Settings',
             'support_button': 'Support',
