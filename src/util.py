@@ -111,22 +111,45 @@ def install_optifine(version: str):
 
 
 def get_quilt_versions(mc_version: str) -> list[dict[str, Any]]:
-    """Получает версии Quilt через официальное API"""
+    """Получает версии Quilt через minecraft-launcher-lib"""
     try:
-        response = requests.get(
-            'https://meta.quiltmc.org/v3/versions/loader',
-            timeout=15,
-        )
-        data = response.json()
-        return [
-            {
-                'version': loader['version'],
-                'minecraft_version': loader['separator'],  # Исправлено с metadata
-                'stable': not loader['version'].lower().startswith('beta'),
-            }
-            for loader in data
-            if mc_version in loader['separator']
-        ]
+        from minecraft_launcher_lib.quilt import get_all_loader_versions, is_minecraft_version_supported
+        
+        # Проверяем, поддерживается ли версия Minecraft
+        if not is_minecraft_version_supported(mc_version):
+            logging.warning(f'Minecraft версия {mc_version} не поддерживается Quilt')
+            return []
+        
+        # Получаем все версии лоадера
+        loader_versions = get_all_loader_versions()
+        
+        # Фильтруем версии для конкретной версии MC
+        filtered_versions = []
+        for loader in loader_versions:
+            # Проверяем, что лоадер поддерживает нужную версию MC
+            if hasattr(loader, 'minecraft_version') and mc_version in str(loader.get('minecraft_version', '')):
+                filtered_versions.append({
+                    'version': loader['version'],
+                    'minecraft_version': mc_version,
+                    'stable': not loader['version'].lower().startswith('beta'),
+                })
+        
+        # Если не нашли специфичные версии, возвращаем все доступные
+        if not filtered_versions:
+            return [
+                {
+                    'version': loader['version'],
+                    'minecraft_version': mc_version,
+                    'stable': not loader['version'].lower().startswith('beta'),
+                }
+                for loader in loader_versions[:10]  # Берем первые 10 версий
+            ]
+        
+        return filtered_versions[:10]  # Ограничиваем количество версий
+        
+    except ImportError:
+        logging.error('minecraft-launcher-lib не установлен')
+        return []
     except Exception as e:
         logging.exception(f'Quilt version fetch failed: {e!s}')
         return []
