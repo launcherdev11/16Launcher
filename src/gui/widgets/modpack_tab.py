@@ -671,7 +671,6 @@ class ModpackTab(QWidget):
             textures_count = len(pack_data.get('textures', []))
             shaders_count = len(pack_data.get('shaders', []))
             
-            # Приблизительный размер: 5MB на мод, 10MB на текстуры, 15MB на шейдеры
             estimated_size = (mods_count * 5) + (textures_count * 10) + (shaders_count * 15)
             
             if estimated_size == 0:
@@ -1151,7 +1150,7 @@ class ModpackTab(QWidget):
 
         for v in MINECRAFT_VERSIONS:
             self.pack_version.addItem(v)
-        self.pack_loader.addItems(['Forge', 'Fabric'])
+        self.pack_loader.addItems(['Forge', 'Fabric', 'Quilt'])
 
         form.addRow('Название сборки:', self.pack_name)
         
@@ -1168,6 +1167,16 @@ class ModpackTab(QWidget):
         form.addRow('Версия Minecraft:', version_container)
         
         form.addRow('Модлоадер:', self.pack_loader)
+        
+        # Кнопка проверки Java
+        java_check_layout = QHBoxLayout()
+        java_check_btn = QPushButton('Проверить Java')
+        java_check_btn.clicked.connect(self.check_java_version)
+        java_check_layout.addWidget(java_check_btn)
+        java_check_layout.addStretch()
+        java_check_container = QWidget()
+        java_check_container.setLayout(java_check_layout)
+        form.addRow('', java_check_container)
 
         from PyQt5.QtWidgets import QSizePolicy
         self.pack_description = QTextEdit()
@@ -1222,7 +1231,7 @@ class ModpackTab(QWidget):
 
         from PyQt5.QtWidgets import QCheckBox
         self.use_all_cb = QCheckBox("Использовать все")
-        self.use_textures_cb = QCheckBox("Использовать текстуры")
+        self.use_textures_cb = QCheckBox("Использовать ресурспаки")
         self.use_shaders_cb = QCheckBox("Использовать шейдеры")
 
         def toggle_all(state):
@@ -1273,7 +1282,7 @@ class ModpackTab(QWidget):
             QListWidget::item:selected { background-color: #2f7d32; color: #fff; }
             """
         )
-        self.textures_label = QLabel('Выберите текстуры:')
+        self.textures_label = QLabel('Выберите ресурспаки:')
         self.textures_label.setVisible(False)
         mods_layout.addWidget(self.textures_label)
         mods_layout.addWidget(self.textures_selection)
@@ -1730,3 +1739,54 @@ class ModpackTab(QWidget):
         except Exception as e:
             logging.exception(f'Ошибка при использовании текущих параметров: {e}')
             QMessageBox.critical(self, 'Ошибка', f'Не удалось применить текущие параметры: {e}')
+
+    def check_java_version(self):
+        """Проверяет версию Java и показывает результат"""
+        try:
+            import subprocess
+            import re
+            
+            result = subprocess.run(['java', '-version'], 
+                                  stdout=subprocess.PIPE, 
+                                  stderr=subprocess.PIPE, 
+                                  check=False, 
+                                  text=True)
+            output = result.stderr or result.stdout
+            
+            # Ищем версию в выводе
+            version_match = re.search(r'version "(\d+)\.(\d+)', output)
+            if version_match:
+                major = int(version_match.group(1))
+                minor = int(version_match.group(2))
+                
+                # Определяем совместимость с выбранным модлоадером
+                loader = self.pack_loader.currentText()
+                requirements = {
+                    'Forge': (8, 'Forge работает с Java 8+'),
+                    'Fabric': (8, 'Fabric работает с Java 8+'),
+                    'Quilt': (17, 'Quilt требует Java 17 или выше'),
+                }
+                
+                min_java, description = requirements.get(loader, (8, 'Требования Java зависят от модлоадера'))
+                
+                if major >= min_java:
+                    message = f"Java {major}.{minor} подходит для {loader}!\n\n{description}"
+                    icon = QMessageBox.Information
+                else:
+                    if loader == 'Quilt':
+                        message = f"Java {major}.{minor} слишком старая для Quilt!\n\nQuilt требует Java 17 или выше.\n\nРекомендации:\n- Скачайте Java 17+ с https://adoptium.net/\n- Или используйте более старую версию Minecraft"
+                    else:
+                        message = f"Java {major}.{minor} подходит для {loader}!\n\n{description}"
+                    icon = QMessageBox.Warning
+            else:
+                message = "Не удалось определить версию Java!\n\nУстановите Java с https://adoptium.net/"
+                icon = QMessageBox.Critical
+            
+            msg = QMessageBox(self)
+            msg.setIcon(icon)
+            msg.setWindowTitle('Проверка версии Java')
+            msg.setText(message)
+            msg.exec_()
+            
+        except Exception as e:
+            QMessageBox.critical(self, 'Ошибка', f'Ошибка проверки Java: {e}')

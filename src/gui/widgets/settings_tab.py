@@ -22,6 +22,7 @@ from PyQt5.QtWidgets import (
 
 from config import MINECRAFT_DIR, MODS_DIR
 from util import load_settings, resource_path, save_settings
+from util import load_settings, resource_path, save_settings
 
 
 class SettingsTab(QWidget):
@@ -177,6 +178,9 @@ class SettingsTab(QWidget):
         self.memory_value_label = QLabel('4 ГБ')
         self.memory_value_label.setStyleSheet('color: #ffffff; font-size: 15px;')
         self.memory_slider.valueChanged.connect(self.update_memory_label)
+        # Сохраняем значение памяти при отпускании ползунка и при изменении (на случай управления с клавиатуры)
+        self.memory_slider.sliderReleased.connect(self.save_memory_setting)
+        self.memory_slider.valueChanged.connect(self.save_memory_setting)
         memory_layout.addWidget(memory_label)
         memory_layout.addWidget(self.memory_slider)
         memory_layout.addWidget(self.memory_value_label)
@@ -228,6 +232,8 @@ class SettingsTab(QWidget):
         game_layout.addWidget(self.hide_console_checkbox)
 
         self.show_console_checkbox.toggled.connect(self.hide_console_checkbox.setVisible)
+        self.show_console_checkbox.toggled.connect(self.save_console_settings)
+        self.hide_console_checkbox.toggled.connect(self.save_console_settings)
         self.hide_console_checkbox.setVisible(self.show_console_checkbox.isChecked())
 
         self.close_on_launch_checkbox = QCheckBox('Закрывать лаунчер при запуске игры')
@@ -425,7 +431,12 @@ class SettingsTab(QWidget):
         if 'close_on_launch' in settings:
             self.close_on_launch_checkbox.setChecked(settings['close_on_launch'])
         if 'memory' in settings:
-            self.memory_slider.setValue(settings['memory'])
+            try:
+                value = int(settings['memory'])
+            except Exception:
+                value = 4
+            value = max(self.memory_slider.minimum(), min(self.memory_slider.maximum(), value))
+            self.memory_slider.setValue(value)
         if 'minecraft_directory' in settings:
             self.directory_edit.setText(settings['minecraft_directory'])
         if 'mods_directory' in settings:
@@ -435,6 +446,9 @@ class SettingsTab(QWidget):
         if 'hide_console_after_launch' in settings:
             self.hide_console_checkbox.setChecked(settings['hide_console_after_launch'])
 
+        # Обновляем подпись памяти под текущее значение
+        self.update_memory_label()
+
         # Принудительно обновляем стили
         self.style().unpolish(self)
         self.style().polish(self)
@@ -442,6 +456,11 @@ class SettingsTab(QWidget):
 
     def update_memory_label(self):
         self.memory_value_label.setText(f'{self.memory_slider.value()} ГБ')
+
+    def save_memory_setting(self):
+        if self.parent_window and hasattr(self.parent_window, 'settings'):
+            self.parent_window.settings['memory'] = self.memory_slider.value()
+            save_settings(self.parent_window.settings)
 
     def choose_mods_directory(self):
         try:
@@ -560,6 +579,13 @@ class SettingsTab(QWidget):
 
     def show_error_message(self, message):
         QMessageBox.critical(self, 'Ошибка', message)
+
+    def save_console_settings(self):
+        """Сохраняет настройки консоли"""
+        if self.parent_window:
+            self.parent_window.settings['show_console'] = self.show_console_checkbox.isChecked()
+            self.parent_window.settings['hide_console_after_launch'] = self.hide_console_checkbox.isChecked()
+            save_settings(self.parent_window.settings)
 
     def closeEvent(self, event):
         if self.parent_window:

@@ -106,6 +106,7 @@ class ModManager:
         loader: str | None = None,
         category: str | None = None,
         sort_by: str = 'relevance',
+        project_type: str | None = None,
     ) -> list[dict[str, Any]]:
         try:
             # Преобразуем параметры сортировки
@@ -133,6 +134,9 @@ class ModManager:
             # Фильтр по категории
             if category and category != 'Все категории':
                 facets.append(['categories:' + category.lower()])
+
+            if project_type in ('mod', 'resourcepack', 'shader'):
+                facets.append(['project_type:' + project_type])
 
             # Формируем параметры запроса
             params = {'query': query, 'limit': 50, 'index': sort_by}
@@ -222,6 +226,52 @@ class ModManager:
             return False, f'Ошибка загрузки мода: {e!s}'
 
     @staticmethod
+    def download_modrinth_project(mod_id: str, version: str, project_type: str) -> tuple[bool, str]:
+        """Скачивает проект Modrinth указанного типа (resourcepack/shader)"""
+        try:
+            logging.info(f'Начинаем скачивание {project_type} {mod_id} для версии {version}')
+            response = requests.get(
+                f'https://api.modrinth.com/v2/project/{mod_id}/version',
+            )
+            if response.status_code != 200:
+                logging.error(f'Ошибка получения информации о проекте {mod_id}: {response.status_code}')
+                return False, 'Не удалось получить информацию о проекте'
+
+            versions = response.json()
+            for v in versions:
+                if version in v.get('game_versions', []):
+                    file_obj = v.get('files', [{}])[0]
+                    file_url = file_obj.get('url')
+                    file_name = file_obj.get('filename', f'{mod_id}.zip')
+                    if not file_url:
+                        continue
+
+                    if project_type == 'resourcepack':
+                        dest_dir = RESOURCEPACKS_DIR
+                    elif project_type == 'shader':
+                        dest_dir = SHADERPACKS_DIR
+                    else:
+                        return False, 'Неизвестный тип проекта'
+
+                    os.makedirs(dest_dir, exist_ok=True)
+                    dest_path = os.path.join(dest_dir, file_name)
+
+                    resp = requests.get(file_url, stream=True)
+                    if resp.status_code == 200:
+                        with open(dest_path, 'wb') as f:
+                            for chunk in resp.iter_content(chunk_size=8192):
+                                if chunk:
+                                    f.write(chunk)
+                        logging.info(f'Проект {file_name} успешно установлен в {dest_path}')
+                        return True, 'Успешно установлено!'
+                    else:
+                        logging.error(f'Ошибка скачивания файла: {resp.status_code}')
+            return False, 'Не найдена подходящая версия проекта'
+        except Exception as e:
+            logging.exception(f'Ошибка загрузки проекта: {e}')
+            return False, f'Ошибка загрузки проекта: {e!s}'
+
+    @staticmethod
     def download_curseforge_mod(mod_id: str, version: str) -> tuple[bool, str]:
         """Скачивает мод с CurseForge"""
         try:
@@ -290,15 +340,75 @@ class ModManager:
             return False, f'Ошибка создания сборки: {e!s}'
 
     @staticmethod
-    def get_mod_categories(source: str = 'modrinth') -> list[str]:
-        if source == 'modrinth':
-            try:
-                response = requests.get('https://api.modrinth.com/v2/tag/category')
-                if response.status_code == 200:
-                    return [cat['name'] for cat in response.json()]
-            except Exception as e:
-                logging.exception(f'Ошибка получения категорий Modrinth: {e}')
-        return []
+    def get_mod_categories(source: str = 'modrinth', project_type: str | None = None) -> list[dict[str, str]]:
+        """Возвращает локализованные категории Modrinth, отфильтрованные по типу проекта.
+
+        Возвращает список словарей вида { 'slug': <категория>, 'label': <отображаемое имя> }.
+        """
+        if source != 'modrinth':
+            return []
+        try:
+            response = requests.get('https://api.modrinth.com/v2/tag/category')
+            if response.status_code != 200:
+                return []
+            cats = response.json()
+
+            # Фильтрация по типу проекта, если указан
+            if project_type in ('mod', 'resourcepack', 'shader'):
+                cats = [c for c in cats if project_type in c.get('project_type', [])]
+
+            # Локализация известных категорий
+            localization = {
+                'adventure': 'Приключения',
+                'decoration': 'Декор',
+                'equipment': 'Снаряжение',
+                'food': 'Еда',
+                'magic': 'Магия',
+                'management': 'Менеджмент',
+                'misc': 'Разное',
+                'optimization': 'Оптимизация',
+                'storage': 'Хранилища',
+                'technology': 'Технологии',
+                'transportation': 'Транспорт',
+                'utility': 'Утилиты',
+                'library': 'Библиотеки',
+                'client-side': 'Клиент',
+                'server-side': 'Сервер',
+                'worldgen': 'Генерация мира',
+                'performance': 'Производительность',
+                'animals': 'Животные',
+                'armor': 'Броня',
+                'biomes': 'Биомы',
+                'blocks': 'Блоки',
+                'mobs': 'Мобы',
+                'commands': 'Команды',
+                'kitchen-sink': 'Сборная солянка',
+                'magic': 'Магия',
+                'minigame': 'Мини-игры',
+                'quests': 'Квесты',
+                'weapons': 'Оружие',
+            }
+
+            localized: list[dict[str, str]] = []
+            for c in cats:
+                slug = c.get('name') or c.get('slug') or ''
+                # Разрешения (16x, 32x, 128x, 512x+) и т.п. оставляем как есть
+                label = localization.get(slug, slug)
+                localized.append({'slug': slug, 'label': label})
+
+            # Удалим дубликаты и отсортируем по label
+            seen = set()
+            result = []
+            for item in localized:
+                if item['slug'] in seen:
+                    continue
+                seen.add(item['slug'])
+                result.append(item)
+            result.sort(key=lambda x: x['label'].lower())
+            return result
+        except Exception as e:
+            logging.exception(f'Ошибка получения категорий Modrinth: {e}')
+            return []
 
     @staticmethod
     def get_mod_details(mod_id: str, source: str = 'modrinth') -> dict[str, Any] | None:
@@ -351,10 +461,11 @@ class ModManager:
         category: str | None = None,
         sort_by: str = 'relevance',
         source: str = 'modrinth',
+        project_type: str | None = None,
     ) -> list[dict[str, Any]]:
         """Кэшированный поиск модов"""
         if source == 'modrinth':
-            return ModManager.search_modrinth(query, version, loader, category, sort_by)
+            return ModManager.search_modrinth(query, version, loader, category, sort_by, project_type)
         return ModManager.search_curseforge(query, version, loader)
 
 

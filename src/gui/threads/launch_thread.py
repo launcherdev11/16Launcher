@@ -114,6 +114,32 @@ class LaunchThread(QThread):
                 launch_version = profile['version']
                 self.log(f'[Quilt] Launch version: {launch_version}')
 
+            elif self.loader_type == 'optifine':
+                self.log('[OptiFine] Processing OptiFine version...')
+                # Ищем установленный профиль OptiFine для выбранной версии MC
+                try:
+                    versions_dir = os.path.join(MINECRAFT_DIR, 'versions')
+                    candidates = []
+                    if os.path.isdir(versions_dir):
+                        for name in os.listdir(versions_dir):
+                            try:
+                                if not isinstance(name, str):
+                                    continue
+                                if self.version_id in name and 'OptiFine' in name:
+                                    path = os.path.join(versions_dir, name)
+                                    if os.path.isdir(path):
+                                        candidates.append((name, os.path.getmtime(path)))
+                            except Exception:
+                                continue
+                    if not candidates:
+                        raise Exception('OptiFine profile not found; please install OptiFine for this version')
+                    # Берём самый свежий профиль
+                    candidates.sort(key=lambda t: t[1], reverse=True)
+                    launch_version = candidates[0][0]
+                    self.log(f'[OptiFine] Launch version: {launch_version}')
+                except Exception as e:
+                    raise Exception(f'OptiFine profile resolve error: {e!s}')
+
             # 4. Патч для legacy версий
             if is_legacy:
                 self.log('[Legacy] Applying legacy patch...')
@@ -175,9 +201,14 @@ class LaunchThread(QThread):
 
             # 7. Запуск процесса
             self.log('[LAUNCH] Starting Minecraft process...')
+            # Для Windows добавляем флаг CREATE_NO_WINDOW чтобы скрыть консольное окно
+            creation_flags = 0
+            if os.name == 'nt':  # Windows
+                creation_flags = subprocess.CREATE_NEW_PROCESS_GROUP | subprocess.CREATE_NO_WINDOW
+            
             minecraft_process = subprocess.Popen(
                 command,
-                creationflags=subprocess.CREATE_NEW_PROCESS_GROUP if os.name == 'nt' else 0,
+                creationflags=creation_flags,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
             )

@@ -11,7 +11,8 @@ import webbrowser
 import requests
 from minecraft_launcher_lib.utils import get_version_list
 from PyQt5.QtCore import QSize, Qt
-from PyQt5.QtGui import QCloseEvent, QIcon
+from PyQt5.QtGui import QCloseEvent, QIcon, QPalette, QPixmap
+from PyQt5.QtWidgets import QGraphicsBlurEffect
 from PyQt5.QtWidgets import (
     QApplication,
     QComboBox,
@@ -54,6 +55,7 @@ from .widgets.modpack_tab import ModpackTab
 from .widgets.mods_tab import ModsTab
 from .widgets.settings_tab import SettingsTab
 from .widgets.splash_screen import SplashScreen
+from .widgets.console_widget import ConsoleWidget
 
 
 def open_root_folder() -> None:
@@ -84,6 +86,7 @@ def get_ely_skin(username: str) -> str | None:
 
 class MainWindow(QMainWindow):
     __slots__ = (
+        'console_widget',
         'ely_login_button',
         'ely_session',
         'fabric_tab',
@@ -107,6 +110,7 @@ class MainWindow(QMainWindow):
     )
 
     def __init__(self) -> None:
+        self.console_widget = None
         self.random_name_button = None
         self.ely_login_button = None
         self.open_folder_button = None
@@ -171,6 +175,7 @@ class MainWindow(QMainWindow):
         self.launch_thread.state_update_signal.connect(self.state_update)
         self.launch_thread.progress_update_signal.connect(self.update_progress)
         self.launch_thread.close_launcher_signal.connect(self.close_launcher)
+        self.launch_thread.log_signal.connect(self.on_launch_log)
 
         logging.debug('Создаём основной контейнер')
         self.splash.update_progress(25, 'Создаём основной экран')
@@ -236,6 +241,7 @@ class MainWindow(QMainWindow):
         logging.debug('Инициализация завершена')
         del self.splash
 
+
     def setup_modloader_tabs(self) -> None:
         # Существующие вкладки
         logging.debug('Создаём вкладку Forge')
@@ -292,8 +298,9 @@ class MainWindow(QMainWindow):
                    padding: 5px;
                }
                QPushButton:hover {
-                   background-color: #444444;
+                   background-color: rgba(68, 68, 68, 0.8);
                    border-radius: 5px;
+                   backdrop-filter: blur(10px);
                }
            """)
         self.play_button.clicked.connect(self.show_game_tab)
@@ -343,14 +350,15 @@ class MainWindow(QMainWindow):
         self.toggle_sidebar_button.setFixedSize(30, 30)
         self.toggle_sidebar_button.setStyleSheet("""
                QPushButton {
-                   background-color: #444444;
+                   background-color: rgba(68, 68, 68, 0.8);
                    color: white;
                    border: none;
                    border-top-right-radius: 5px;
                    border-bottom-right-radius: 5px;
+                   backdrop-filter: blur(10px);
                }
                QPushButton:hover {
-                   background-color: #666666;
+                   background-color: rgba(102, 102, 102, 0.9);
                }
            """)
         self.toggle_sidebar_button.clicked.connect(self.toggle_sidebar)
@@ -363,9 +371,18 @@ class MainWindow(QMainWindow):
         self.main_layout.addWidget(self.sidebar_container)
 
     def setup_game_tab(self) -> None:
+        # Создаем контейнер с полупрозрачным фоном
+        self.game_tab.setStyleSheet("""
+            QWidget {
+                background-color: rgba(51, 51, 51, 0.7);
+                border-radius: 15px;
+                backdrop-filter: blur(20px);
+            }
+        """)
+        
         layout = QVBoxLayout(self.game_tab)
-        layout.setContentsMargins(20, 20, 20, 20)
-        layout.setSpacing(15)
+        layout.setContentsMargins(30, 30, 30, 30)
+        layout.setSpacing(20)
 
         form_layout = QVBoxLayout()
         form_layout.setSpacing(15)
@@ -378,7 +395,21 @@ class MainWindow(QMainWindow):
         self.username.setMinimumHeight(40)
         self.username.setText(self.last_username)
 
-        self.username.setStyleSheet('padding-right: 80px;')
+        self.username.setStyleSheet("""
+            QLineEdit {
+                background-color: rgba(68, 68, 68, 0.8);
+                color: #f1f1f1;
+                border: 1px solid rgba(85, 85, 85, 0.6);
+                padding: 10px 80px 10px 10px;
+                border-radius: 10px;
+                font-size: 14px;
+                backdrop-filter: blur(10px);
+            }
+            QLineEdit:focus {
+                border-color: rgba(161, 161, 161, 0.8);
+                background-color: rgba(68, 68, 68, 0.9);
+            }
+        """)
         top_row.addWidget(self.username)
 
         self.random_name_button = QToolButton(self.username)
@@ -421,6 +452,26 @@ class MainWindow(QMainWindow):
         self.version_type_select.addItem('Все версии')
         self.version_type_select.addItem('Избранные')
         self.version_type_select.currentTextChanged.connect(self.update_version_list)
+        self.version_type_select.setStyleSheet("""
+            QComboBox {
+                background-color: rgba(68, 68, 68, 0.8);
+                color: #f1f1f1;
+                border: 1px solid rgba(85, 85, 85, 0.6);
+                padding: 10px;
+                border-radius: 10px;
+                font-size: 14px;
+                backdrop-filter: blur(10px);
+            }
+            QComboBox::drop-down {
+                subcontrol-origin: padding;
+                subcontrol-position: top right;
+                width: 30px;
+                border-left: 1px solid rgba(85, 85, 85, 0.6);
+                background: rgba(85, 85, 85, 0.8);
+                border-top-right-radius: 10px;
+                border-bottom-right-radius: 10px;
+            }
+        """)
         version_row.addWidget(self.version_type_select)
 
         # 2. Модлоадер
@@ -432,6 +483,7 @@ class MainWindow(QMainWindow):
         self.loader_select.addItem('Fabric', 'fabric')
         self.loader_select.addItem('OptiFine', 'optifine')
         self.loader_select.addItem('Quilt', 'quilt')
+        self.loader_select.setStyleSheet(self.version_type_select.styleSheet())
         loader_index = self.loader_select.findData(self.last_loader)
         if loader_index >= 0:
             self.loader_select.setCurrentIndex(loader_index)
@@ -442,12 +494,30 @@ class MainWindow(QMainWindow):
         self.version_select.setMinimumHeight(45)
         self.version_select.setFixedWidth(250)
         self.version_select.setSizeAdjustPolicy(QComboBox.AdjustToContents)
+        self.version_select.setStyleSheet(self.version_type_select.styleSheet())
         version_row.addWidget(self.version_select)
 
         # 4. Кнопка избранного
         self.favorite_button = QPushButton('★')
         self.favorite_button.setFixedSize(45, 45)
         self.favorite_button.setCheckable(True)
+        self.favorite_button.setStyleSheet("""
+            QPushButton {
+                background-color: rgba(68, 68, 68, 0.8);
+                color: #f1f1f1;
+                border: 1px solid rgba(85, 85, 85, 0.6);
+                border-radius: 10px;
+                font-size: 18px;
+                backdrop-filter: blur(10px);
+            }
+            QPushButton:hover {
+                background-color: rgba(102, 102, 102, 0.9);
+            }
+            QPushButton:checked {
+                color: gold;
+                background-color: rgba(102, 102, 102, 0.9);
+            }
+        """)
         self.favorite_button.clicked.connect(self.toggle_favorite)
         version_row.addWidget(self.favorite_button)
 
@@ -459,21 +529,65 @@ class MainWindow(QMainWindow):
 
         self.change_skin_button = QPushButton('Сменить скин (Ely.by)')
         self.change_skin_button.setMinimumHeight(50)
+        self.change_skin_button.setStyleSheet("""
+            QPushButton {
+                background-color: rgba(68, 68, 68, 0.8);
+                color: #f1f1f1;
+                border: 1px solid rgba(85, 85, 85, 0.6);
+                padding: 10px;
+                border-radius: 10px;
+                font-size: 14px;
+                backdrop-filter: blur(10px);
+            }
+            QPushButton:hover {
+                background-color: rgba(102, 102, 102, 0.9);
+                transform: scale(1.05);
+            }
+        """)
         self.change_skin_button.clicked.connect(self.change_ely_skin)
         self.change_skin_button.setVisible(False)
 
-        self.start_button = QPushButton('Играть')
+        self.start_button = QPushButton('ИГРАТЬ')
         self.start_button.setMinimumHeight(50)
+        self.start_button.setStyleSheet("""
+            QPushButton {
+                background-color: rgba(40, 167, 69, 0.8);
+                color: white;
+                border: none;
+                padding: 15px;
+                border-radius: 10px;
+                font-size: 16px;
+                font-weight: bold;
+                backdrop-filter: blur(8px);
+            }
+            QPushButton:hover {
+                background-color: rgba(33, 136, 56, 0.9);
+                transform: scale(1.05);
+            }
+            QPushButton:pressed {
+                background-color: rgba(30, 120, 50, 0.95);
+            }
+        """)
         self.start_button.clicked.connect(self.launch_game)
         bottom_row.addWidget(self.start_button)
 
-        self.change_skin_button = QPushButton('Сменить скин (Ely.by)')
-        self.change_skin_button.setMinimumHeight(50)
-        self.change_skin_button.clicked.connect(self.change_ely_skin)
-        self.change_skin_button.setVisible(False)
-
         self.ely_login_button = QPushButton('Войти с Ely.by')
         self.ely_login_button.setMinimumHeight(50)
+        self.ely_login_button.setStyleSheet("""
+            QPushButton {
+                background-color: rgba(68, 68, 68, 0.8);
+                color: #f1f1f1;
+                border: 1px solid rgba(85, 85, 85, 0.6);
+                padding: 10px;
+                border-radius: 10px;
+                font-size: 14px;
+                backdrop-filter: blur(10px);
+            }
+            QPushButton:hover {
+                background-color: rgba(102, 102, 102, 0.9);
+                transform: scale(1.05);
+            }
+        """)
         self.ely_login_button.clicked.connect(self.handle_ely_login)
 
         bottom_row.addWidget(self.change_skin_button)
@@ -481,19 +595,21 @@ class MainWindow(QMainWindow):
 
         # Кнопка "Открыть папку"
         self.open_folder_button = QPushButton()
-        self.open_folder_button.setIcon(QIcon(resource_path(' assets/folder.png')))
+        self.open_folder_button.setIcon(QIcon(resource_path('assets/folder.png')))
         self.open_folder_button.setToolTip('Открыть папку с игрой')
         self.open_folder_button.setIconSize(QSize(24, 24))
         self.open_folder_button.setCursor(Qt.PointingHandCursor)
         self.open_folder_button.setFixedSize(50, 50)
         self.open_folder_button.setStyleSheet("""
             QPushButton {
-                background-color: transparent;
-                border: none;
+                background-color: rgba(68, 68, 68, 0.8);
+                border: 1px solid rgba(85, 85, 85, 0.6);
+                border-radius: 10px;
+                backdrop-filter: blur(10px);
             }
             QPushButton:hover {
-                background-color: rgba(255, 255, 255, 0.1);
-                border-radius: 8px;
+                background-color: rgba(102, 102, 102, 0.9);
+                transform: scale(1.05);
             }
         """)
         self.open_folder_button.clicked.connect(open_root_folder)
@@ -503,11 +619,13 @@ class MainWindow(QMainWindow):
         self.motd_label = QLabel()
         self.motd_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.motd_label.setStyleSheet("""
-            color: #aaaaaa;
+            color: rgba(170, 170, 170, 0.7);
             font-style: italic;
             font-size: 14px;
-            background: transparent;
-            padding: 5px;
+            background: rgba(51, 51, 51, 0.3);
+            padding: 10px;
+            border-radius: 8px;
+            backdrop-filter: blur(8px);
         """)
         layout.addWidget(self.motd_label)
         layout.addStretch()  # Добавляем растягивающееся пространство
@@ -525,7 +643,26 @@ class MainWindow(QMainWindow):
         self.start_progress = QProgressBar(self.game_tab)
         self.start_progress.setMinimumHeight(20)
         self.start_progress.setVisible(False)
+        self.start_progress.setStyleSheet("""
+            QProgressBar {
+                border: 1px solid rgba(85, 85, 85, 0.6);
+                background-color: rgba(51, 51, 51, 0.8);
+                color: #f1f1f1;
+                border-radius: 10px;
+                text-align: center;
+                backdrop-filter: blur(10px);
+            }
+            QProgressBar::chunk {
+                background-color: rgba(40, 167, 69, 0.9);
+                border-radius: 10px;
+            }
+        """)
         layout.addWidget(self.start_progress)
+
+        # Добавляем консоль
+        self.console_widget = ConsoleWidget(self.game_tab)
+        self.console_widget.setVisible(False)  # По умолчанию скрыта
+        layout.addWidget(self.console_widget)
 
         self.update_version_list()
         if self.last_version:
@@ -662,13 +799,14 @@ class MainWindow(QMainWindow):
             self.change_skin_button.setVisible(True)
             self.change_skin_button.setStyleSheet("""
                 QPushButton {
-                    background-color: #28a745;
+                    background-color: rgba(40, 167, 69, 0.9);
                     color: white;
                     padding: 8px;
                     border-radius: 5px;
+                    backdrop-filter: blur(10px);
                 }
                 QPushButton:hover {
-                    background-color: #218838;
+                    background-color: rgba(33, 136, 56, 0.95);
                 }
             """)
             self.change_skin_button.setText('Управление скином')
@@ -1171,37 +1309,40 @@ class MainWindow(QMainWindow):
     def apply_dark_theme(self, dark_theme: bool = True) -> None:
         dark_theme_css = """
         QMainWindow {
-            background-color: #2e2e2e;
+            background-color: #606060;
         }
         QWidget {
-            background-color: #2e2e2e;
+            background-color: transparent;
             color: #f1f1f1;
         }
         QLineEdit {
-            background-color: #444444;
+            background-color: rgba(68, 68, 68, 0.8);
             color: #f1f1f1;
-            border: 1px solid #555555;
+            border: 1px solid rgba(85, 85, 85, 0.6);
             padding: 10px 30px 10px 10px;
             border-radius: 10px;
             font-size: 14px;
+            backdrop-filter: blur(10px);
         }
         QLineEdit:focus {
-            border-color: #a1a1a1;
+            border-color: rgba(161, 161, 161, 0.8);
+            background-color: rgba(68, 68, 68, 0.9);
         }
         QPushButton {
-            background-color: #444444;
+            background-color: rgba(68, 68, 68, 0.8);
             color: #f1f1f1;
-            border: 1px solid #555555;
+            border: 1px solid rgba(85, 85, 85, 0.6);
             padding: 10px;
             border-radius: 10px;
             font-size: 14px;
+            backdrop-filter: blur(10px);
         }
         QPushButton:hover {
-            background-color: #666666;
-            transform: scale(1.1);
+            background-color: rgba(102, 102, 102, 0.9);
+            transform: scale(1.05);
         }
         QPushButton:focus {
-            border-color: #a1a1a1;
+            border-color: rgba(161, 161, 161, 0.8);
         }
         QToolButton {
             background-color: transparent;
@@ -1213,29 +1354,31 @@ class MainWindow(QMainWindow):
             border-radius: 3px;
         }
         QComboBox {
-            background-color: #444444;
+            background-color: rgba(68, 68, 68, 0.8);
             color: #f1f1f1;
-            border: 1px solid #555555;
+            border: 1px solid rgba(85, 85, 85, 0.6);
             padding: 10px;
             border-radius: 10px;
             font-size: 14px;
+            backdrop-filter: blur(10px);
         }
         QComboBox::drop-down {
             subcontrol-origin: padding;
             subcontrol-position: top right;
             width: 30px;
-            border-left: 1px solid #555;
-            background: #555;
+            border-left: 1px solid rgba(85, 85, 85, 0.6);
+            background: rgba(85, 85, 85, 0.8);
             border-top-right-radius: 10px;
             border-bottom-right-radius: 10px;
         }
         QComboBox QAbstractItemView {
-            background-color: #333;
+            background-color: rgba(51, 51, 51, 0.95);
             color: #f1f1f1;
-            selection-background-color: #555;
-            border: 1px solid #444;
+            selection-background-color: rgba(85, 85, 85, 0.8);
+            border: 1px solid rgba(68, 68, 68, 0.6);
             padding: 5px;
             outline: none;
+            backdrop-filter: blur(15px);
         }
         QComboBox QAbstractItemView::item {
             padding: 6px 10px;
@@ -1306,23 +1449,26 @@ class MainWindow(QMainWindow):
             background: #f0f0f0;
         }
         QTabWidget::pane {
-            border: 1px solid #444;
-            background: #333;
+            border: 1px solid rgba(68, 68, 68, 0.6);
+            background: rgba(51, 51, 51, 0.85);
+            backdrop-filter: blur(15px);
         }
         QTabBar::tab {
-            background: #444;
+            background: rgba(68, 68, 68, 0.8);
             color: #fff;
             padding: 8px;
             border-top-left-radius: 4px;
             border-top-right-radius: 4px;
+            backdrop-filter: blur(10px);
         }
         QTabBar::tab:selected {
-            background: #555;
-            border-color: #666;
+            background: rgba(85, 85, 85, 0.9);
+            border-color: rgba(102, 102, 102, 0.8);
         }
         QFrame {
-            background-color: #252525;
-            border-right: 1px solid #444;
+            background-color: rgba(37, 37, 37, 0.85);
+            border-right: 1px solid rgba(68, 68, 68, 0.6);
+            backdrop-filter: blur(15px);
         }
         /* Unified scrollbars (dark) */
         QScrollBar:vertical {
@@ -1403,10 +1549,10 @@ class MainWindow(QMainWindow):
 
         light_theme_css = """
         QMainWindow {
-            background-color: #f5f5f5;
+            background-color: transparent;
         }
         QWidget {
-            background-color: #f5f5f5;
+            background-color: transparent;
             color: #333333;
         }
         QLineEdit {
@@ -1649,6 +1795,13 @@ class MainWindow(QMainWindow):
             self.settings['show_snapshots'] = self.settings_tab.show_snapshots_checkbox.isChecked()
 
         self.settings['last_username'] = self.username.text().strip()
+        
+        # Сохраняем настройки консоли
+        if hasattr(self.settings_tab, 'show_console_checkbox'):
+            self.settings['show_console'] = self.settings_tab.show_console_checkbox.isChecked()
+        if hasattr(self.settings_tab, 'hide_console_checkbox'):
+            self.settings['hide_console_after_launch'] = self.settings_tab.hide_console_checkbox.isChecked()
+            
         save_settings(self.settings)
         event.accept()
 
@@ -1744,10 +1897,24 @@ class MainWindow(QMainWindow):
     def state_update(self, is_running: bool) -> None:
         if is_running:
             self.start_button.setEnabled(False)
+            # Показать консоль при запуске, если включена в настройках
+            if hasattr(self.settings_tab, 'show_console_checkbox') and self.settings_tab.show_console_checkbox.isChecked():
+                self.console_widget.show_console()
         else:
             self.start_button.setEnabled(True)
             self.start_progress_label.setVisible(False)
             self.start_progress.setVisible(False)
+            # Скрыть консоль после запуска, если включена соответствующая настройка
+            if (hasattr(self.settings_tab, 'hide_console_checkbox') and 
+                self.settings_tab.hide_console_checkbox.isChecked() and
+                hasattr(self.settings_tab, 'show_console_checkbox') and 
+                self.settings_tab.show_console_checkbox.isChecked()):
+                self.console_widget.hide_console()
+
+    def on_launch_log(self, message: str) -> None:
+        """Обработчик логов от launch_thread"""
+        if self.console_widget and self.console_widget.isVisible():
+            self.console_widget.add_log_with_color(message)
 
     def show_message_of_the_day(self) -> None:
         if hasattr(self, 'motd_label') and self.settings.get('show_motd', True):
