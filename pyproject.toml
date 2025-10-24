@@ -9,7 +9,7 @@ authors = [
 ]
 readme = "README.md"
 license = { text = "MIT" }
-requires-python = "==3.12.*"
+requires-python = "==3.*"
 keywords = ["minecraft", "launcher", "game", "gaming", "minecraft-launcher", "java", "minecraft-client"]
 classifiers = [
     "Programming Language :: Python :: 3",

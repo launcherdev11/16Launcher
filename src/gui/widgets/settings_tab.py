@@ -499,10 +499,11 @@ class SettingsTab(QWidget):
 
     def update_logout_button_visibility(self):
         """Обновляет видимость кнопки выхода в зависимости от статуса авторизации"""
-        if hasattr(self.parent_window, 'ely_session') and self.parent_window.ely_session:
-            self.ely_logout_button.setVisible(True)
-        else:
-            self.ely_logout_button.setVisible(False)
+        if hasattr(self, 'ely_logout_button') and self.ely_logout_button:
+            if hasattr(self.parent_window, 'ely_session') and self.parent_window.ely_session:
+                self.ely_logout_button.setVisible(True)
+            else:
+                self.ely_logout_button.setVisible(False)
         # Принудительно обновляем layout
         self.layout().update()
 
