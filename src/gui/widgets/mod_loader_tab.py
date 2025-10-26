@@ -1,6 +1,7 @@
 import logging
 
 from minecraft_launcher_lib.forge import find_forge_version
+from PyQt5.QtCore import Qt
 from PyQt5.QtWidgets import (
     QComboBox,
     QLabel,
@@ -21,10 +22,37 @@ class ModLoaderTab(QWidget):
         super().__init__(parent)
         self.loader_type = loader_type
         self.setup_ui()
-        self.load_mc_versions()
+        # Загружаем версии только для доступных вкладок
+        if self.loader_type not in ['optifine', 'quilt']:
+            self.load_mc_versions()
 
     def setup_ui(self):
         layout = QVBoxLayout(self)
+        
+        # Для optifine и quilt показываем сообщение о недоступности
+        if self.loader_type == 'optifine':
+            unavailable_label = QLabel('Вкладка OptiFine временно недоступна(')
+            unavailable_label.setAlignment(Qt.AlignCenter)
+            unavailable_label.setStyleSheet("""
+                color: #f1f1f1;
+                font-size: 18px;
+                padding: 50px;
+            """)
+            layout.addWidget(unavailable_label)
+            layout.addStretch()
+            return
+        
+        if self.loader_type == 'quilt':
+            unavailable_label = QLabel('Вкладка Quilt временно недоступна(')
+            unavailable_label.setAlignment(Qt.AlignCenter)
+            unavailable_label.setStyleSheet("""
+                color: #f1f1f1;
+                font-size: 18px;
+                padding: 50px;
+            """)
+            layout.addWidget(unavailable_label)
+            layout.addStretch()
+            return
 
         # Выбор версии Minecraft
         self.mc_version_combo = QComboBox()

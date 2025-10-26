@@ -1,29 +1,24 @@
 import sys
 import os
 
-# Добавляем путь к модулям
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'src'))
-
-from config import LOG_FILE, MINECRAFT_DIR
+from PyQt5.QtWidgets import QApplication
 
 # Создаём директорию для Minecraft и логов если её нет
 os.makedirs(MINECRAFT_DIR, exist_ok=True)
 
-import logging
+from config import LOG_FILE
+from gui.main_window import MainWindow
+from util import setup_directories
 
 logging.basicConfig(
     level=logging.DEBUG,
     format='%(asctime)s - %(name)s - %(levelname)s - %(filename)s:%(lineno)d - %(message)s',
+    datefmt='%Y-%m-%d %H:%M:%S',
     handlers=[
+        logging.StreamHandler(sys.stderr),
         logging.FileHandler(LOG_FILE),
-        logging.StreamHandler(sys.stdout),
     ],
 )
-
-from PyQt5.QtWidgets import QApplication
-
-from gui.main_window import MainWindow
-from util import setup_directories
 
 if __name__ == '__main__':
     logging.info('Initializing directories')

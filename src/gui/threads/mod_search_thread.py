@@ -7,13 +7,14 @@ class ModSearchThread(QThread):
     search_finished = pyqtSignal(list, str)
     error_occurred = pyqtSignal(str)
 
-    def __init__(self, query, version, loader, category, sort_by):
+    def __init__(self, query, version, loader, category, sort_by, project_type=None):
         super().__init__()
         self.query = query
         self.version = version
         self.loader = loader
         self.category = category
         self.sort_by = sort_by
+        self.project_type = project_type
 
     def run(self):
         try:
@@ -24,6 +25,7 @@ class ModSearchThread(QThread):
                 self.category,
                 self.sort_by,
                 'modrinth',
+                self.project_type,
             )
             self.search_finished.emit(mods, self.query)
         except Exception as e:
