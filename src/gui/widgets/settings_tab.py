@@ -22,6 +22,7 @@ from PyQt5.QtWidgets import (
 
 from config import MINECRAFT_DIR, MODS_DIR
 from util import load_settings, resource_path, save_settings
+from util import load_settings, resource_path, save_settings
 
 
 class SettingsTab(QWidget):
@@ -60,24 +61,7 @@ class SettingsTab(QWidget):
         scroll.setWidgetResizable(True)
         scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         scroll.setStyleSheet("""
-            QScrollArea {
-                border: none;
-                background-color: transparent;
-            }
-            QScrollBar:vertical {
-                border: none;
-                background: #2d2d2d;
-                width: 8px;
-                margin: 0px;
-            }
-            QScrollBar::handle:vertical {
-                background: #666666;
-                min-height: 16px;
-                border-radius: 4px;
-            }
-            QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {
-                height: 0px;
-            }
+            QScrollArea { border: none; background-color: transparent; }
         """)
 
         # Контейнер для всех настроек
@@ -130,6 +114,8 @@ class SettingsTab(QWidget):
         language_layout.addWidget(self.language_combo)
         appearance_layout.addLayout(language_layout)
 
+        #консоль
+
         # Тема
         self.theme_button = QPushButton()
         self.theme_button.setFixedHeight(32)
@@ -179,25 +165,77 @@ class SettingsTab(QWidget):
                 border-radius: 4px;
             }
             QSlider::handle:horizontal {
-                background: #0078d7;
-                border: none;
+                background: #bbbbbb;
+                border: 1px solid #777777;
                 width: 18px;
                 margin: -5px 0;
                 border-radius: 9px;
             }
             QSlider::handle:horizontal:hover {
-                background: #1a88e0;
+                background: #d0d0d0;
             }
         """)
         self.memory_value_label = QLabel('4 ГБ')
         self.memory_value_label.setStyleSheet('color: #ffffff; font-size: 15px;')
         self.memory_slider.valueChanged.connect(self.update_memory_label)
+        # Сохраняем значение памяти при отпускании ползунка и при изменении (на случай управления с клавиатуры)
+        self.memory_slider.sliderReleased.connect(self.save_memory_setting)
+        self.memory_slider.valueChanged.connect(self.save_memory_setting)
         memory_layout.addWidget(memory_label)
         memory_layout.addWidget(self.memory_slider)
         memory_layout.addWidget(self.memory_value_label)
         game_layout.addLayout(memory_layout)
 
-        # Чекбокс закрытия
+        #консоль
+        self.show_console_checkbox = QCheckBox('Консоль при запуске')
+        self.show_console_checkbox.setStyleSheet("""
+            QCheckBox {
+                color: #ffffff;
+                spacing: 6px;
+                font-size: 15px;
+            }
+            QCheckBox::indicator {
+                width: 16px;
+                height: 16px;
+                border: 1px solid #555555;
+                border-radius: 2px;
+                background: #3d3d3d;
+            }
+            QCheckBox::indicator:checked {
+                background: #0078d7;
+                border: 1px solid #0078d7;
+            }
+        """)
+        self.show_console_checkbox.setChecked(True)
+        game_layout.addWidget(self.show_console_checkbox)
+
+        self.hide_console_checkbox = QCheckBox('Скрывать консоль после запуска')
+        self.hide_console_checkbox.setStyleSheet("""
+            QCheckBox {
+                color: #ffffff;
+                spacing: 6px;
+                font-size: 15px;
+            }
+            QCheckBox::indicator {
+                width: 16px;
+                height: 16px;
+                border: 1px solid #555555;
+                border-radius: 2px;
+                background: #3d3d3d;
+            }
+            QCheckBox::indicator:checked {
+                background: #0078d7;
+                border: 1px solid #0078d7;
+            }
+        """)
+        self.hide_console_checkbox.setChecked(False) 
+        game_layout.addWidget(self.hide_console_checkbox)
+
+        self.show_console_checkbox.toggled.connect(self.hide_console_checkbox.setVisible)
+        self.show_console_checkbox.toggled.connect(self.save_console_settings)
+        self.hide_console_checkbox.toggled.connect(self.save_console_settings)
+        self.hide_console_checkbox.setVisible(self.show_console_checkbox.isChecked())
+
         self.close_on_launch_checkbox = QCheckBox('Закрывать лаунчер при запуске игры')
         self.close_on_launch_checkbox.setStyleSheet("""
             QCheckBox {
@@ -219,6 +257,29 @@ class SettingsTab(QWidget):
         """)
         game_layout.addWidget(self.close_on_launch_checkbox)
 
+        # Автоустановка Java (чекбокс в игровых настройках) - скрыт
+        self.auto_java_checkbox_game = QCheckBox('Автоматическая установка Java')
+        self.auto_java_checkbox_game.setStyleSheet("""
+            QCheckBox {
+                color: #ffffff;
+                spacing: 6px;
+                font-size: 15px;
+            }
+            QCheckBox::indicator {
+                width: 16px;
+                height: 16px;
+                border: 1px solid #555555;
+                border-radius: 2px;
+                background: #3d3d3d;
+            }
+            QCheckBox::indicator:checked {
+                background: #0078d7;
+                border: 1px solid #0078d7;
+            }
+        """)
+        self.auto_java_checkbox_game.setVisible(False)
+        game_layout.addWidget(self.auto_java_checkbox_game)
+
         settings_layout.addWidget(game_card)
 
         # Директории
@@ -231,7 +292,6 @@ class SettingsTab(QWidget):
         directories_header.setStyleSheet(header_style)
         directories_layout.addWidget(directories_header)
 
-        # Стиль для полей ввода и кнопок
         input_style = """
             QLineEdit {
                 background-color: #3d3d3d;
@@ -327,6 +387,29 @@ class SettingsTab(QWidget):
             self.parent_window.update_version_list,
         )
         versions_layout.addWidget(self.show_snapshots_checkbox)
+
+        # Автоустановка Java (дублирующий чекбокс в секции версий) - скрыт
+        self.auto_java_checkbox_versions = QCheckBox('Автоматическая установка Java')
+        self.auto_java_checkbox_versions.setStyleSheet("""
+            QCheckBox {
+                color: #ffffff;
+                spacing: 6px;
+                font-size: 15px;
+            }
+            QCheckBox::indicator {
+                width: 16px;
+                height: 16px;
+                border: 1px solid #555555;
+                border-radius: 2px;
+                background: #3d3d3d;
+            }
+            QCheckBox::indicator:checked {
+                background: #0078d7;
+                border: 1px solid #0078d7;
+            }
+        """)
+        self.auto_java_checkbox_versions.setVisible(False)
+        versions_layout.addWidget(self.auto_java_checkbox_versions)
         settings_layout.addWidget(versions_card)
 
         # Аккаунт Ely.by
@@ -394,11 +477,35 @@ class SettingsTab(QWidget):
         if 'close_on_launch' in settings:
             self.close_on_launch_checkbox.setChecked(settings['close_on_launch'])
         if 'memory' in settings:
-            self.memory_slider.setValue(settings['memory'])
+            try:
+                value = int(settings['memory'])
+            except Exception:
+                value = 4
+            value = max(self.memory_slider.minimum(), min(self.memory_slider.maximum(), value))
+            self.memory_slider.setValue(value)
         if 'minecraft_directory' in settings:
             self.directory_edit.setText(settings['minecraft_directory'])
         if 'mods_directory' in settings:
             self.mods_directory_edit.setText(settings['mods_directory'])
+        if 'show_console' in settings:
+            self.show_console_checkbox.setChecked(settings['show_console'])
+        if 'hide_console_after_launch' in settings:
+            self.hide_console_checkbox.setChecked(settings['hide_console_after_launch'])
+        if 'auto_install_java' in settings:
+            checked = bool(settings['auto_install_java'])
+            self.auto_java_checkbox_game.setChecked(checked)
+            self.auto_java_checkbox_versions.setChecked(checked)
+        else:
+            # По умолчанию автоустановка Java отключена
+            self.auto_java_checkbox_game.setChecked(False)
+            self.auto_java_checkbox_versions.setChecked(False)
+
+        # Синхронизация чекбоксов автоустановки Java
+        self.auto_java_checkbox_game.toggled.connect(self._on_auto_java_toggled_from_game)
+        self.auto_java_checkbox_versions.toggled.connect(self._on_auto_java_toggled_from_versions)
+
+        # Обновляем подпись памяти под текущее значение
+        self.update_memory_label()
 
         # Принудительно обновляем стили
         self.style().unpolish(self)
@@ -408,8 +515,12 @@ class SettingsTab(QWidget):
     def update_memory_label(self):
         self.memory_value_label.setText(f'{self.memory_slider.value()} ГБ')
 
+    def save_memory_setting(self):
+        if self.parent_window and hasattr(self.parent_window, 'settings'):
+            self.parent_window.settings['memory'] = self.memory_slider.value()
+            save_settings(self.parent_window.settings)
+
     def choose_mods_directory(self):
-        """Выбор директории для модов"""
         try:
             directory = QFileDialog.getExistingDirectory(
                 self,
@@ -417,11 +528,11 @@ class SettingsTab(QWidget):
             )
             if directory:
                 self.mods_directory_edit.setText(directory)
-                MODS_DIR = directory
                 # Сохраняем в настройках
                 if self.parent_window:
                     self.parent_window.settings['mods_directory'] = directory
                     save_settings(self.parent_window.settings)
+                    logging.info(f'Папка модов изменена на: {directory}')
         except Exception as e:
             logging.exception(f'Ошибка при выборе директории модов: {e}')
             self.show_error_message('Ошибка при выборе директории модов')
@@ -434,7 +545,6 @@ class SettingsTab(QWidget):
             save_settings(self.parent_window.settings)
 
     def open_mods_directory(self):
-        """Открывает директорию с модами"""
         try:
             mods_dir = self.mods_directory_edit.text()
             if not os.path.exists(mods_dir):
@@ -448,20 +558,17 @@ class SettingsTab(QWidget):
             self.show_error_message('Ошибка при открытии директории модов')
 
     def setup_language_selector(self):
-        # Добавляем в layout настроек
         self.language_combo = QComboBox()
         self.language_combo.addItem('Русский', 'ru')
         self.language_combo.addItem('English', 'en')
         self.language_combo.currentIndexChanged.connect(self.change_language)
 
-        # Добавляем в layout настроек
         language_layout = QHBoxLayout()
         language_label = QLabel('Язык:')
         language_label.setStyleSheet('color: #ffffff;')
         language_layout.addWidget(language_label)
         language_layout.addWidget(self.language_combo)
 
-        # Добавляем в начало appearance_layout
         appearance_layout = self.findChild(QVBoxLayout)
         if appearance_layout:
             appearance_layout.insertLayout(0, language_layout)
@@ -476,18 +583,15 @@ class SettingsTab(QWidget):
         current_theme = getattr(self.parent_window, 'current_theme', 'dark')
         new_theme = 'light' if current_theme == 'dark' else 'dark'
 
-        # Применяем новую тему
         self.parent_window.apply_dark_theme(
             new_theme == 'dark',
-        )  # <- Исправлено на apply_dark_theme
+        )
         self.update_theme_button_icon()
 
-        # Сохраняем выбор темы
         self.parent_window.settings['theme'] = new_theme
         save_settings(self.parent_window.settings)
 
     def update_theme_button_icon(self):
-        """Обновляет иконку и текст кнопки в зависимости от текущей темы"""
         current_theme = getattr(self.parent_window, 'current_theme', 'dark')
         if current_theme == 'dark':
             self.theme_button.setIcon(QIcon(resource_path('assets/sun.png')))
@@ -498,13 +602,10 @@ class SettingsTab(QWidget):
         self.theme_button.setIconSize(QSize(24, 24))
 
     def update_logout_button_visibility(self):
-        """Обновляет видимость кнопки выхода в зависимости от статуса авторизации"""
-        if hasattr(self, 'ely_logout_button') and self.ely_logout_button:
-            if hasattr(self.parent_window, 'ely_session') and self.parent_window.ely_session:
-                self.ely_logout_button.setVisible(True)
-            else:
-                self.ely_logout_button.setVisible(False)
-        # Принудительно обновляем layout
+        if hasattr(self.parent_window, 'ely_session') and self.parent_window.ely_session:
+            self.ely_logout_button.setVisible(True)
+        else:
+            self.ely_logout_button.setVisible(False)
         self.layout().update()
 
     def choose_directory(self):
@@ -515,9 +616,11 @@ class SettingsTab(QWidget):
             )
             if directory:
                 self.directory_edit.setText(directory)
-                MINECRAFT_DIR = directory
-                SETTINGS_PATH = os.path.join(MINECRAFT_DIR, 'settings.json')
-                LOG_FILE = os.path.join(MINECRAFT_DIR, 'launcher_log.txt')
+                # Сохраняем в настройках
+                if self.parent_window:
+                    self.parent_window.settings['minecraft_directory'] = directory
+                    save_settings(self.parent_window.settings)
+                    logging.info(f'Папка игры изменена на: {directory}')
         except Exception as e:
             logging.exception(f'Ошибка при выборе директории: {e}')
             self.show_error_message('Ошибка при выборе директории')
@@ -535,14 +638,39 @@ class SettingsTab(QWidget):
     def show_error_message(self, message):
         QMessageBox.critical(self, 'Ошибка', message)
 
+    def save_console_settings(self):
+        """Сохраняет настройки консоли"""
+        if self.parent_window:
+            self.parent_window.settings['show_console'] = self.show_console_checkbox.isChecked()
+            self.parent_window.settings['hide_console_after_launch'] = self.hide_console_checkbox.isChecked()
+            save_settings(self.parent_window.settings)
+
+    def _on_auto_java_toggled_from_game(self, checked: bool):
+        if self.parent_window:
+            self.parent_window.settings['auto_install_java'] = bool(checked)
+            save_settings(self.parent_window.settings)
+        if self.auto_java_checkbox_versions.isChecked() != checked:
+            self.auto_java_checkbox_versions.blockSignals(True)
+            self.auto_java_checkbox_versions.setChecked(checked)
+            self.auto_java_checkbox_versions.blockSignals(False)
+
+    def _on_auto_java_toggled_from_versions(self, checked: bool):
+        if self.parent_window:
+            self.parent_window.settings['auto_install_java'] = bool(checked)
+            save_settings(self.parent_window.settings)
+        if self.auto_java_checkbox_game.isChecked() != checked:
+            self.auto_java_checkbox_game.blockSignals(True)
+            self.auto_java_checkbox_game.setChecked(checked)
+            self.auto_java_checkbox_game.blockSignals(False)
+
     def closeEvent(self, event):
-        # Сохраняем настройки через главное окно
         if self.parent_window:
             self.parent_window.settings = {
                 'close_on_launch': self.close_on_launch_checkbox.isChecked(),
                 'memory': self.memory_slider.value(),
                 'minecraft_directory': self.directory_edit.text(),
                 'mods_directory': self.mods_directory_edit.text(),
-                # Убрали сохранение last_username здесь
+                'show_console': self.show_console_checkbox.isChecked(),
+                'hide_console_after_launch': self.hide_console_checkbox.isChecked()
             }
             save_settings(self.parent_window.settings)
