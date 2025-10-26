@@ -257,6 +257,29 @@ class SettingsTab(QWidget):
         """)
         game_layout.addWidget(self.close_on_launch_checkbox)
 
+        # Автоустановка Java (чекбокс в игровых настройках) - скрыт
+        self.auto_java_checkbox_game = QCheckBox('Автоматическая установка Java')
+        self.auto_java_checkbox_game.setStyleSheet("""
+            QCheckBox {
+                color: #ffffff;
+                spacing: 6px;
+                font-size: 15px;
+            }
+            QCheckBox::indicator {
+                width: 16px;
+                height: 16px;
+                border: 1px solid #555555;
+                border-radius: 2px;
+                background: #3d3d3d;
+            }
+            QCheckBox::indicator:checked {
+                background: #0078d7;
+                border: 1px solid #0078d7;
+            }
+        """)
+        self.auto_java_checkbox_game.setVisible(False)
+        game_layout.addWidget(self.auto_java_checkbox_game)
+
         settings_layout.addWidget(game_card)
 
         # Директории
@@ -364,6 +387,29 @@ class SettingsTab(QWidget):
             self.parent_window.update_version_list,
         )
         versions_layout.addWidget(self.show_snapshots_checkbox)
+
+        # Автоустановка Java (дублирующий чекбокс в секции версий) - скрыт
+        self.auto_java_checkbox_versions = QCheckBox('Автоматическая установка Java')
+        self.auto_java_checkbox_versions.setStyleSheet("""
+            QCheckBox {
+                color: #ffffff;
+                spacing: 6px;
+                font-size: 15px;
+            }
+            QCheckBox::indicator {
+                width: 16px;
+                height: 16px;
+                border: 1px solid #555555;
+                border-radius: 2px;
+                background: #3d3d3d;
+            }
+            QCheckBox::indicator:checked {
+                background: #0078d7;
+                border: 1px solid #0078d7;
+            }
+        """)
+        self.auto_java_checkbox_versions.setVisible(False)
+        versions_layout.addWidget(self.auto_java_checkbox_versions)
         settings_layout.addWidget(versions_card)
 
         # Аккаунт Ely.by
@@ -445,6 +491,18 @@ class SettingsTab(QWidget):
             self.show_console_checkbox.setChecked(settings['show_console'])
         if 'hide_console_after_launch' in settings:
             self.hide_console_checkbox.setChecked(settings['hide_console_after_launch'])
+        if 'auto_install_java' in settings:
+            checked = bool(settings['auto_install_java'])
+            self.auto_java_checkbox_game.setChecked(checked)
+            self.auto_java_checkbox_versions.setChecked(checked)
+        else:
+            # По умолчанию автоустановка Java отключена
+            self.auto_java_checkbox_game.setChecked(False)
+            self.auto_java_checkbox_versions.setChecked(False)
+
+        # Синхронизация чекбоксов автоустановки Java
+        self.auto_java_checkbox_game.toggled.connect(self._on_auto_java_toggled_from_game)
+        self.auto_java_checkbox_versions.toggled.connect(self._on_auto_java_toggled_from_versions)
 
         # Обновляем подпись памяти под текущее значение
         self.update_memory_label()
@@ -586,6 +644,24 @@ class SettingsTab(QWidget):
             self.parent_window.settings['show_console'] = self.show_console_checkbox.isChecked()
             self.parent_window.settings['hide_console_after_launch'] = self.hide_console_checkbox.isChecked()
             save_settings(self.parent_window.settings)
+
+    def _on_auto_java_toggled_from_game(self, checked: bool):
+        if self.parent_window:
+            self.parent_window.settings['auto_install_java'] = bool(checked)
+            save_settings(self.parent_window.settings)
+        if self.auto_java_checkbox_versions.isChecked() != checked:
+            self.auto_java_checkbox_versions.blockSignals(True)
+            self.auto_java_checkbox_versions.setChecked(checked)
+            self.auto_java_checkbox_versions.blockSignals(False)
+
+    def _on_auto_java_toggled_from_versions(self, checked: bool):
+        if self.parent_window:
+            self.parent_window.settings['auto_install_java'] = bool(checked)
+            save_settings(self.parent_window.settings)
+        if self.auto_java_checkbox_game.isChecked() != checked:
+            self.auto_java_checkbox_game.blockSignals(True)
+            self.auto_java_checkbox_game.setChecked(checked)
+            self.auto_java_checkbox_game.blockSignals(False)
 
     def closeEvent(self, event):
         if self.parent_window:

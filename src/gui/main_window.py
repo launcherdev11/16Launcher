@@ -643,6 +643,7 @@ class MainWindow(QMainWindow):
         self.start_progress = QProgressBar(self.game_tab)
         self.start_progress.setMinimumHeight(20)
         self.start_progress.setVisible(False)
+        self.start_progress.setFormat('%p%')  # Показываем процент
         self.start_progress.setStyleSheet("""
             QProgressBar {
                 border: 1px solid rgba(85, 85, 85, 0.6);
@@ -651,6 +652,7 @@ class MainWindow(QMainWindow):
                 border-radius: 10px;
                 text-align: center;
                 backdrop-filter: blur(10px);
+                font-weight: bold;
             }
             QProgressBar::chunk {
                 background-color: rgba(40, 167, 69, 0.9);

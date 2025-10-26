@@ -1120,7 +1120,7 @@ class ModpackTab(QWidget):
     def show_creation_dialog(self):
         dialog = QDialog(self)
         dialog.setWindowTitle('Создание сборки')
-        dialog.setMinimumSize(850, 800)
+        dialog.setMinimumSize(950, 900)
         dialog.resize(900, 600)
 
         layout = QVBoxLayout()

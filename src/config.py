@@ -37,6 +37,7 @@ default_settings = {
     'last_version': '',
     'last_loader': 'vanilla',
     'show_snapshots': False,
+    'auto_install_java': False,
 }
 adjectives = [
     'Cool',

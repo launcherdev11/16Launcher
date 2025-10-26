@@ -1,479 +1,275 @@
+import json
 import logging
-
-from minecraft_launcher_lib.forge import find_forge_version
-from PyQt5.QtWidgets import (
-    QComboBox,
-    QLabel,
-    QMessageBox,
-    QProgressBar,
-    QPushButton,
-    QVBoxLayout,
-    QWidget,
-    QHBoxLayout,
-    QListWidget,
-    QListWidgetItem,
-    QSplitter,
-)
-
-from config import MINECRAFT_VERSIONS
-from util import get_quilt_versions
-from ..threads.mod_loader_installer import ModLoaderInstaller
+import os
+import shutil
+import subprocess
+import traceback
+import urllib.request
 
 import requests
-import re
-from bs4 import BeautifulSoup
+from minecraft_launcher_lib.fabric import get_all_minecraft_versions, get_latest_loader_version
+from minecraft_launcher_lib.fabric import install_fabric as fabric_install
+from minecraft_launcher_lib.forge import find_forge_version, install_forge_version
+from PyQt5.QtCore import QThread, pyqtSignal
 
-# Убираем зависимость от optipy - используем прямое парсинг
-OPTIPY_AVAILABLE = True  # Теперь всегда доступно
+from config import MINECRAFT_DIR, MINECRAFT_VERSIONS
+from util import get_quilt_versions
 
 
-class ModLoaderTab(QWidget):
-    def __init__(self, loader_type, parent=None):
-        super().__init__(parent)
-        self.loader_type = loader_type
-        self.setup_ui()
-        self.load_mc_versions()
+class ModLoaderInstaller(QThread):
+    progress_signal = pyqtSignal(int, int, str)
+    finished_signal = pyqtSignal(bool, str)
 
-    def setup_ui(self):
-        layout = QVBoxLayout(self)
+    def __init__(
+        self,
+        loader_type: str,
+        version: str,
+        mc_version: str | None = None,
+    ) -> None:
+        super().__init__()
+        self.loader_type = loader_type.lower()  # Приводим к нижнему регистру
+        self.version = version
+        self.mc_version = mc_version
 
-        # Проверяем, является ли вкладка недоступной
-        if self.loader_type in ['optifine', 'quilt']:
-            self.setup_unavailable_ui(layout)
-            return
-
-        # Выбор версии Minecraft
-        self.mc_version_combo = QComboBox()
-        layout.addWidget(QLabel('Версия Minecraft:'))
-        layout.addWidget(self.mc_version_combo)
-
-        # Кнопка установки
-        self.install_btn = QPushButton(f'Установить {self.loader_type}')
-        self.install_btn.clicked.connect(self.install_loader)
-        layout.addWidget(self.install_btn)
-
-        # Прогресс-бар
-        self.progress = QProgressBar()
-        self.progress.setVisible(False)
-        layout.addWidget(self.progress)
-
-        # Статус
-        self.status_label = QLabel()
-        self.status_label.setVisible(False)
-        layout.addWidget(self.status_label)
-
-        # Информация о требованиях Java для всех модлоадеров
-        self.setup_java_info(layout)
-        
-        # Специальная логика для OptiFine
-        if self.loader_type == 'optifine':
-            self.setup_optifine_ui(layout)
-            self.mc_version_combo.currentTextChanged.connect(self.load_optifine_versions)
-        # Для Forge - выбор версии Forge
-        elif self.loader_type == 'forge':
-            self.forge_version_combo = QComboBox()
-            layout.addWidget(QLabel('Версия Forge:'))
-            layout.addWidget(self.forge_version_combo)
-            self.mc_version_combo.currentTextChanged.connect(self.update_forge_versions)
-            self.update_forge_versions()
-
-        elif self.loader_type == 'quilt':
-            self.loader_version_combo = QComboBox()
-            layout.addWidget(QLabel('Версия Quilt:'))
-            layout.addWidget(self.loader_version_combo)
-            self.mc_version_combo.currentTextChanged.connect(self.update_quilt_versions)
-            self.update_quilt_versions()
-
-    def setup_java_info(self, layout):
-        """Настройка информации о Java для всех модлоадеров"""
-        # Информация о требованиях Java
-        java_requirements = {
-            'fabric': 'Fabric работает с Java 8+',
-            'forge': 'Forge работает с Java 8+',
-            'quilt': 'Quilt требует Java 17 или выше',
-            'optifine': 'OptiFine работает с Java 8+'
-        }
-        
-        java_info_label = QLabel(java_requirements.get(self.loader_type, 'Требования Java зависят от модлоадера'))
-        java_info_label.setStyleSheet('color: #ffa500; font-weight: bold;')
-        layout.addWidget(java_info_label)
-        
-        # Кнопка проверки Java
-        check_java_btn = QPushButton('Проверить версию Java')
-        check_java_btn.clicked.connect(self.check_java_version)
-        layout.addWidget(check_java_btn)
-
-    def setup_optifine_ui(self, layout):
-        """Настройка специального UI для OptiFine"""
-        if not OPTIPY_AVAILABLE:
-            error_label = QLabel('OptiPy не установлен. Установите optipy для работы с OptiFine.')
-            error_label.setStyleSheet('color: red; font-weight: bold;')
-            layout.addWidget(error_label)
-            return
-
-        # Информация о доступности OptiFine
-        info_label = QLabel('Доступные версии OptiFine:')
-        layout.addWidget(info_label)
-        
-        # Список версий OptiFine
-        self.optifine_list = QListWidget()
-        self.optifine_list.setMaximumHeight(200)
-        layout.addWidget(self.optifine_list)
-        
-        # Кнопка обновления списка
-        refresh_btn = QPushButton('Обновить список')
-        refresh_btn.clicked.connect(self.load_optifine_versions)
-        layout.addWidget(refresh_btn)
-        
-        # Выбранная версия
-        self.selected_version_label = QLabel('Выбранная версия: Не выбрано')
-        layout.addWidget(self.selected_version_label)
-        
-        # Подключаем сигнал выбора
-        self.optifine_list.itemClicked.connect(self.on_optifine_version_selected)
-
-    def load_optifine_versions(self):
-        """Загружает список версий OptiFine с сайта"""
-        self.optifine_list.clear()
-        self.status_label.setText('Загрузка версий OptiFine...')
-        self.status_label.setVisible(True)
-        
+    def run(self):
         try:
-            # Получаем версии OptiFine для конкретной версии MC
-            mc_version = self.mc_version_combo.currentText()
-            
-            # Проверяем, что версия MC выбрана
-            if not mc_version or mc_version.strip() == '':
-                self.optifine_list.addItem('[ОШИБКА] Выберите версию Minecraft')
-                self.status_label.setText('Выберите версию Minecraft')
-                return
-            
-            # Парсим сайт OptiFine напрямую
-            versions = self._parse_optifine_website(mc_version)
-            
-            if versions:
-                # Добавляем версии в список
-                for version_data in versions:
-                    title = version_data.get('title', 'OptiFine')
-                    date = version_data.get('date', '')
-                    forge = version_data.get('forge', '')
-                    url = version_data.get('url', '')
-                    
-                    # Создаем текст элемента
-                    item_text = f'{title}'
-                    if date:
-                        item_text += f' ({date})'
-                    if forge:
-                        item_text += f' - {forge}'
-                    
-                    # Создаем элемент с текстом
-                    item = QListWidgetItem()
-                    item.setText(item_text)
-                    
-                    # Сохраняем полные данные версии
-                    item.setData(256, {
-                        'title': title,
-                        'date': date,
-                        'forge': forge,
-                        'url': url,
-                        'mc_version': mc_version
-                    })
-                    
-                    self.optifine_list.addItem(item)
-                
-                self.status_label.setText(f'Найдено {len(versions)} версий OptiFine для {mc_version}')
+            if self.loader_type == 'fabric':
+                self.install_fabric()
+            elif self.loader_type == 'forge':
+                self.install_forge()
+            elif self.loader_type == 'optifine':
+                self.install_optifine()
+            elif self.loader_type == 'quilt':
+                self.install_quilt()
+            elif self.loader_type == 'neoforge':
+                self.install_neoforge()
+            elif self.loader_type == 'forgeoptifine':
+                self.install_forge_optifine()
             else:
-                self.optifine_list.addItem(f'[ОШИБКА] Нет версий OptiFine для {mc_version}')
-                self.status_label.setText('Версии не найдены')
-            
+                self.finished_signal.emit(
+                    False,
+                    f'Неизвестный тип модлоадера: {self.loader_type}',
+                )
         except Exception as e:
-            logging.exception(f'Ошибка загрузки версий OptiFine: {e}')
-            self.optifine_list.addItem(f'[ОШИБКА] Ошибка: {str(e)}')
-            self.status_label.setText('Ошибка загрузки версий')
-    
-    def _parse_optifine_website(self, mc_version):
-        """Парсит сайт OptiFine и возвращает список версий для указанной версии MC"""
-        try:
-            headers = {
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36',
-                'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
-            }
-            
-            # Загружаем страницу загрузок
-            response = requests.get('https://www.optifine.net/downloads', headers=headers, timeout=30)
-            response.raise_for_status()
-            
-            # Парсим HTML
-            soup = BeautifulSoup(response.text, 'html.parser')
-            versions = []
-            
-            # Ищем все ссылки на .jar файлы
-            all_links = soup.find_all('a', href=True)
-            for link in all_links:
-                href = link['href']
-                text = link.get_text().strip()
-                
-                # Проверяем, что это ссылка на OptiFine для нужной версии MC
-                if (href.endswith('.jar') or 'download' in href) and mc_version in text and 'OptiFine' in text:
-                    # Извлекаем название версии
-                    title = text
-                    
-                    # Ищем дату в родительском элементе
-                    date = ''
-                    parent = link.parent
-                    while parent and not date:
-                        parent_text = parent.get_text()
-                        date_match = re.search(r'(\d{2}\.\d{2}\.\d{4})', parent_text)
-                        if date_match:
-                            date = date_match.group(1)
-                            break
-                        parent = parent.parent
-                    
-                    # Ищем информацию о Forge в родительском элементе
-                    forge = ''
-                    parent = link.parent
-                    while parent and not forge:
-                        parent_text = parent.get_text()
-                        if 'Forge' in parent_text:
-                            forge_match = re.search(r'Forge\s+[\d\.]+', parent_text)
-                            if forge_match:
-                                forge = forge_match.group(0)
-                                break
-                        parent = parent.parent
-                    
-                    # Формируем полный URL
-                    if href.startswith('http'):
-                        url = href
-                    elif href.startswith('/'):
-                        url = f'https://optifine.net{href}'
-                    else:
-                        url = f'https://optifine.net/{href}'
-                    
-                    versions.append({
-                        'title': title,
-                        'date': date,
-                        'forge': forge,
-                        'url': url
-                    })
-            
-            # Если не нашли через парсинг, используем fallback - создаем базовую версию
-            if not versions:
-                # Создаем базовую версию для тестирования
-                versions.append({
-                    'title': f'OptiFine HD U G8',
-                    'date': '15.05.2021',
-                    'forge': 'Forge 36.1.0',
-                    'url': f'https://optifine.net/download?f=OptiFine_1.16.5_HD_U_G8.jar'
-                })
-            
-            return versions
-            
-        except Exception as e:
-            logging.exception(f'Ошибка парсинга сайта OptiFine: {e}')
-            # Fallback - возвращаем базовую версию
-            return [{
-                'title': f'OptiFine HD U G8',
-                'date': '15.05.2021',
-                'forge': 'Forge 36.1.0',
-                'url': f'https://optifine.net/download?f=OptiFine_1.16.5_HD_U_G8.jar'
-            }]
-
-    def on_optifine_version_selected(self, item):
-        """Обработчик выбора версии OptiFine"""
-        version_data = item.data(256)  # Используем Qt::UserRole вместо 0
-        if version_data and isinstance(version_data, dict):
-            # Используем title или version в зависимости от того, что доступно
-            version_name = version_data.get('title', version_data.get('version', 'Неизвестная версия'))
-            self.selected_version_label.setText(f'Выбранная версия: {version_name}')
-            self.selected_optifine_version = version_data
-        else:
-            self.selected_version_label.setText('Выбранная версия: Не выбрано')
-            self.selected_optifine_version = None
-
-    def load_mc_versions(self):
-        """Загружает версии Minecraft"""
-        self.mc_version_combo.clear()
-        for version in MINECRAFT_VERSIONS:
-            self.mc_version_combo.addItem(version)
-        
-        # Загружаем версии OptiFine после загрузки версий MC
-        if self.loader_type == 'optifine':
-            self.load_optifine_versions()
-
-    def update_forge_versions(self):
-        """Обновляет список версий Forge при изменении версии MC"""
-        if self.loader_type != 'forge':
-            return
-
-        mc_version = self.mc_version_combo.currentText()
-        self.forge_version_combo.clear()
-
-        try:
-            forge_version = find_forge_version(mc_version)
-            if forge_version:
-                self.forge_version_combo.addItem(forge_version)
-            else:
-                self.forge_version_combo.addItem('Автоматический выбор')
-        except Exception as e:
-            logging.exception(f'Ошибка загрузки Forge: {e!s}')
-            self.forge_version_combo.addItem('Ошибка загрузки')
-
-    def update_quilt_versions(self):
-        """Обновляет список версий Quilt"""
-        if self.loader_type != 'quilt':
-            return
-
-        self.loader_version_combo.clear()
-        self.status_label.setText('Загрузка версий Quilt...')
-        self.status_label.setVisible(True)
-        
-        try:
-            mc_version = self.mc_version_combo.currentText()
-            if not mc_version:
-                self.loader_version_combo.addItem('Выберите версию Minecraft')
-                return
-                
-            versions = get_quilt_versions(mc_version)
-            
-            if versions:
-                # Добавляем опцию "Последняя версия"
-                self.loader_version_combo.addItem('Последняя версия (рекомендуется)')
-                
-                # Добавляем доступные версии
-                for v in versions:
-                    version_text = v['version']
-                    if v.get('stable', True):
-                        version_text += ' (стабильная)'
-                    else:
-                        version_text += ' (бета)'
-                    self.loader_version_combo.addItem(version_text)
-                
-                # Выбираем первую версию по умолчанию
-                self.loader_version_combo.setCurrentIndex(0)
-                self.status_label.setText(f'Найдено {len(versions)} версий Quilt для {mc_version}')
-            else:
-                self.loader_version_combo.addItem(f'Нет версий Quilt для {mc_version}')
-                self.status_label.setText(f'Quilt не поддерживает версию {mc_version}')
-                
-        except Exception as e:
-            logging.exception(f'Ошибка загрузки Quilt: {e}')
-            self.loader_version_combo.addItem('Ошибка загрузки')
-            self.status_label.setText('Ошибка загрузки версий Quilt')
-
-    def check_java_version(self):
-        """Проверяет версию Java и показывает результат"""
-        try:
-            import subprocess
-            import re
-            
-            result = subprocess.run(['java', '-version'], 
-                                  stdout=subprocess.PIPE, 
-                                  stderr=subprocess.PIPE, 
-                                  check=False, 
-                                  text=True)
-            output = result.stderr or result.stdout
-            
-            # Ищем версию в выводе
-            version_match = re.search(r'version "(\d+)\.(\d+)', output)
-            if version_match:
-                major = int(version_match.group(1))
-                minor = int(version_match.group(2))
-                
-                # Определяем совместимость с текущим модлоадером
-                requirements = {
-                    'fabric': (8, 'Fabric работает с Java 8+'),
-                    'forge': (8, 'Forge работает с Java 8+'),
-                    'quilt': (17, 'Quilt требует Java 17 или выше'),
-                    'optifine': (8, 'OptiFine работает с Java 8+')
-                }
-                
-                min_java, description = requirements.get(self.loader_type, (8, 'Требования Java зависят от модлоадера'))
-                
-                if major >= min_java:
-                    message = f"Java {major}.{minor} подходит для {self.loader_type.title()}!\n\n{description}"
-                    icon = QMessageBox.Information
-                else:
-                    if self.loader_type == 'quilt':
-                        message = f"Java {major}.{minor} слишком старая для Quilt!\n\nQuilt требует Java 17 или выше.\n\nРекомендации:\n- Скачайте Java 17+ с https://adoptium.net/\n- Или используйте более старую версию Minecraft"
-                    else:
-                        message = f"Java {major}.{minor} подходит для {self.loader_type.title()}!\n\n{description}"
-                    icon = QMessageBox.Warning
-            else:
-                message = "Не удалось определить версию Java!\n\nУстановите Java с https://adoptium.net/"
-                icon = QMessageBox.Critical
-            
-            msg = QMessageBox(self)
-            msg.setIcon(icon)
-            msg.setWindowTitle('Проверка версии Java')
-            msg.setText(message)
-            msg.exec_()
-            
-        except Exception as e:
-            QMessageBox.critical(self, 'Ошибка', f'Ошибка проверки Java: {e}')
-
-    def install_loader(self):
-        mc_version = self.mc_version_combo.currentText()
-
-        if self.loader_type == 'optifine':
-            if not hasattr(self, 'selected_optifine_version') or not self.selected_optifine_version:
-                QMessageBox.warning(self, 'Ошибка', 'Выберите версию OptiFine для установки!')
-                return
-            # Для OptiFine передаем данные версии
-            self.install_thread = ModLoaderInstaller('optifine', self.selected_optifine_version, mc_version)
-        elif self.loader_type == 'forge':
-            forge_version = self.forge_version_combo.currentText()
-            if forge_version == 'Автоматический выбор':
-                forge_version = None
-            self.install_thread = ModLoaderInstaller('forge', forge_version, mc_version)
-        elif self.loader_type == 'quilt':
-            loader_version_text = self.loader_version_combo.currentText()
-            
-            # Обрабатываем выбор версии
-            if 'Последняя версия' in loader_version_text:
-                loader_version = 'latest'
-            elif 'Ошибка загрузки' in loader_version_text or 'Нет версий' in loader_version_text:
-                QMessageBox.warning(self, 'Ошибка', 'Не удалось загрузить версии Quilt!')
-                return
-            else:
-                # Извлекаем версию из текста (убираем пометки о стабильности)
-                loader_version = loader_version_text.split(' (')[0]
-            
-            self.install_thread = ModLoaderInstaller(
-                'quilt',
-                loader_version,
-                mc_version,
+            self.finished_signal.emit(False, f'Критическая ошибка: {e!s}')
+            logging.error(
+                f'Ошибка установки {self.loader_type}: {e!s}',
+                exc_info=True,
             )
-        else:
-            self.install_thread = ModLoaderInstaller(self.loader_type, None, mc_version)
 
-        self.install_thread.progress_signal.connect(self.update_progress)
+    def install_optifine(self):
+        """Установка OptiFine"""
         try:
-            from ..main_window import MainWindow  # type: ignore
-            parent = self.parent()
-            while parent and not isinstance(parent, MainWindow):
-                parent = parent.parent()
-            if parent and hasattr(parent, 'console_widget'):
-                self.install_thread.log_signal.connect(parent.on_launch_log)
-        except Exception:
+            # Скачивание установщика
+            download_url = f'https://optifine.net/adloadx?f=OptiFine_{self.mc_version}.jar'
+            optifine_path = os.path.join(MINECRAFT_DIR, 'OptiFine.jar')
+
+            with requests.get(download_url, stream=True) as r:
+                with open(optifine_path, 'wb') as f:
+                    shutil.copyfileobj(r.raw, f)
+
+            # Запуск установщика
+            command = ['java', '-jar', optifine_path, '--install', MINECRAFT_DIR]
+            subprocess.run(command, check=True)
+
+            self.finished_signal.emit(
+                True,
+                f'OptiFine для {self.mc_version} установлен!',
+            )
+
+        except Exception as e:
+            self.finished_signal.emit(False, f'Ошибка установки OptiFine: {e!s}')
+
+    def install_quilt(self):
+        try:
+            from minecraft_launcher_lib.quilt import install_quilt as quilt_install
+
+            # Получаем последнюю версию лоадера для выбранной версии MC
+            quilt_versions = get_quilt_versions(self.mc_version)
+            if not quilt_versions:
+                raise ValueError(f'Quilt для {self.mc_version} не найден')
+
+            loader_version = quilt_versions[0]['version']
+
+            quilt_install(
+                minecraft_version=self.mc_version,
+                loader_version=loader_version,
+                minecraft_directory=MINECRAFT_DIR,
+                callback=self.get_callback(),
+            )
+            self.finished_signal.emit(
+                True,
+                f'Quilt {loader_version} для {self.mc_version} установлен!',
+            )
+
+        except Exception as e:
+            self.finished_signal.emit(False, f'Ошибка установки Quilt: {e!s}')
+
+    def install_fabric(self):
+        try:
+            # Получаем последнюю версию лоадера
+            loader_version = get_latest_loader_version()
+
+            # Создаем профиль Fabric
+            fabric_install(
+                minecraft_version=self.mc_version,
+                minecraft_directory=MINECRAFT_DIR,
+                loader_version=loader_version,
+            )
+
+            self.finished_signal.emit(
+                True,
+                f'Fabric {loader_version} для {self.mc_version} установлен!',
+            )
+
+        except Exception as e:
+            self.finished_signal.emit(False, f'Ошибка установки Fabric: {e!s}')
+            logging.exception(f'Fabric install error: {traceback.format_exc()}')
+
+    def _check_internet_connection(self):
+        """Проверка соединения с серверами Fabric"""
+        try:
+            urllib.request.urlopen('https://meta.fabricmc.net', timeout=5)
+            return True
+        except:
+            try:
+                urllib.request.urlopen('https://google.com', timeout=5)
+                return False  # Есть интернет, но Fabric недоступен
+            except:
+                return False  # Нет интернета
+
+    def _get_fabric_versions_with_fallback(self):
+        """Получение версий с несколькими попытками и резервными методами"""
+        versions = []
+
+        # Попытка 1: Официальный API Fabric
+        try:
+            versions_data = get_all_minecraft_versions()
+            if versions_data:
+                versions = [v['id'] for v in versions_data if isinstance(v, dict) and 'id' in v]
+                if versions:
+                    return versions
+        except:
             pass
-        self.install_thread.finished_signal.connect(self.installation_finished)
-        self.install_thread.start()
 
-        self.install_btn.setEnabled(False)
-        self.progress.setVisible(True)
-        self.status_label.setVisible(True)
+        # Попытка 2: Альтернативный источник (GitHub)
+        try:
+            with urllib.request.urlopen(
+                'https://raw.githubusercontent.com/FabricMC/fabric-meta/main/data/game_versions.json',
+            ) as response:
+                data = json.loads(response.read().decode())
+                versions = [v['version'] for v in data if isinstance(v, dict) and 'version' in v]
+                if versions:
+                    return versions
+        except:
+            pass
 
-    def update_progress(self, current, total, text):
-        self.progress.setMaximum(total)
-        self.progress.setValue(current)
-        self.status_label.setText(text)
+        try:
+            return MINECRAFT_VERSIONS
+        except:
+            pass
 
-    def installation_finished(self, success, message):
-        self.install_btn.setEnabled(True)
-        self.progress.setVisible(False)
+        return []
 
-        msg = QMessageBox(self)
-        msg.setIcon(QMessageBox.Information if success else QMessageBox.Critical)
-        msg.setText(message)
-        msg.setWindowTitle('Результат установки')
-        msg.exec_()
+    @staticmethod
+    def find_neoforge_version(mc_version: str):
+        """Поиск версии NeoForge для указанной версии MC"""
+        response = requests.get(
+            'https://maven.neoforged.net/api/maven/versions/releases/net.neoforged/neoforge',
+        )
+        versions = response.json()['versions']
+        for v in versions:
+            if mc_version in v:
+                return v
+        return None
+
+    @staticmethod
+    def install_quilt_version(
+        minecraft_version: str,
+        loader_version: str,
+        install_dir: str,
+        callback: dict,
+    ):
+        """Установка Quilt"""
+        quilt_profile = {
+            'mainClass': 'org.quiltmc.loader.impl.launch.knot.KnotClient',
+            'libraries': [
+                {
+                    'name': f'org.quiltmc:quilt-loader:{loader_version}',
+                    'url': 'https://maven.quiltmc.org/repository/release/',
+                },
+            ],
+        }
+
+        # Создание профиля Quilt
+        version_dir = os.path.join(
+            str(install_dir),
+            'versions',
+            f'quilt-loader-{loader_version}-{minecraft_version}',
+        )
+        os.makedirs(version_dir, exist_ok=True)
+
+        with open(
+            os.path.join(
+                version_dir,
+                f'quilt-loader-{loader_version}-{minecraft_version}.json',
+            ),
+            'w',
+        ) as f:
+            json.dump(quilt_profile, f)
+
+    def _perform_fabric_installation(self):
+        """Выполнение установки с проверкой каждого этапа"""
+        # Получаем версию загрузчика
+        try:
+            loader_version = get_latest_loader_version()
+            if not loader_version:
+                # Если не получается определить последнюю версию, пробуем конкретную
+                loader_version = '0.15.7'  # Актуальная стабильная версия на момент написания
+        except:
+            loader_version = '0.15.7'
+
+        # Установка
+        try:
+            fabric_install(
+                minecraft_version=self.mc_version,
+                minecraft_directory=MINECRAFT_DIR,
+                loader_version=loader_version,
+                callback=self.get_callback(),
+            )
+            self.finished_signal.emit(
+                True,
+                f'Fabric {loader_version} для {self.mc_version} успешно установлен!',
+            )
+        except Exception as e:
+            raise ValueError(f'Ошибка установки: {e!s}')
+
+    def install_forge(self):
+        """Установка Forge"""
+        try:
+            forge_version = find_forge_version(self.mc_version)
+            if not forge_version:
+                self.finished_signal.emit(
+                    False,
+                    f'Forge для {self.mc_version} не найден',
+                )
+                return
+
+            install_forge_version(
+                forge_version,
+                MINECRAFT_DIR,
+                callback=self.get_callback(),
+            )
+            self.finished_signal.emit(True, f'Forge {forge_version} установлен!')
+
+        except Exception as e:
+            self.finished_signal.emit(False, f'Ошибка установки Forge: {e!s}')
+            logging.error(f'Forge install failed: {e!s}', exc_info=True)
+
+    def get_callback(self):
+        """Генератор callback-функций для отслеживания прогресса"""
+        return {
+            'setStatus': lambda text: self.progress_signal.emit(0, 100, text),
+            'setProgress': lambda value: self.progress_signal.emit(value, 100, ''),
+            'setMax': lambda value: self.progress_signal.emit(0, value, ''),
+        }
