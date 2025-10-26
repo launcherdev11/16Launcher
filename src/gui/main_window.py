@@ -843,8 +843,8 @@ class MainWindow(QMainWindow):
             self.ely_logout()
         else:
             self.ely_login()
-        # Обновляем кнопку в настройках
-        if hasattr(self.settings_tab, 'update_logout_button_visibility'):
+        # Обновляем кнопку в настройках, если она существует
+        if hasattr(self, 'settings_tab') and hasattr(self.settings_tab, 'update_logout_button_visibility'):
             self.settings_tab.update_logout_button_visibility()
 
     def ely_login(self) -> None:
@@ -971,7 +971,7 @@ class MainWindow(QMainWindow):
             # Обновляем UI
             self.update_ely_ui(False)
             self.username.setText('')
-            if hasattr(self, 'settings_tab'):
+            if hasattr(self, 'settings_tab') and hasattr(self.settings_tab, 'update_logout_button_visibility'):
                 self.settings_tab.update_logout_button_visibility()
             
             QMessageBox.information(self, 'Выход', 'Вы вышли из аккаунта Ely.by')

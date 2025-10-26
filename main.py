@@ -1,12 +1,19 @@
 import sys
 import os
 
-from PyQt5.QtWidgets import QApplication
+# Добавляем путь к модулям СНАЧАЛА
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'src'))
 
-# Создаём директорию для Minecraft и логов если её нет
+# ПОТОМ импортируем
+from config import LOG_FILE, MINECRAFT_DIR
+
+# Создаём директорию
 os.makedirs(MINECRAFT_DIR, exist_ok=True)
 
-from config import LOG_FILE
+import logging
+
+from PyQt5.QtWidgets import QApplication
+
 from gui.main_window import MainWindow
 from util import setup_directories
 

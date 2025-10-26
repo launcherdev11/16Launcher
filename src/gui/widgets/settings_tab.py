@@ -602,11 +602,15 @@ class SettingsTab(QWidget):
         self.theme_button.setIconSize(QSize(24, 24))
 
     def update_logout_button_visibility(self):
-        if hasattr(self.parent_window, 'ely_session') and self.parent_window.ely_session:
-            self.ely_logout_button.setVisible(True)
-        else:
-            self.ely_logout_button.setVisible(False)
-        self.layout().update()
+        """Обновляет видимость кнопки выхода из Ely.by"""
+        # Проверяем, есть ли кнопка выхода
+        if not hasattr(self, 'ely_logout_button'):
+            logging.debug('ely_logout_button не найдена в SettingsTab')
+            return
+        
+        # Проверяем наличие сессии
+        has_session = hasattr(self.parent(), 'ely_session') and self.parent().ely_session
+        self.ely_logout_button.setVisible(has_session)
 
     def choose_directory(self):
         try:

@@ -1,13 +1,15 @@
 import logging
+import os
 
 import requests
 
 from ely_device import authorize_via_device_code
 from flow import logged
 from util import read, write
-from config import ELYBY_API_URL, ELYBY_SKINS_URL, ELYBY_SKIN_UPLOAD_URL
+from config import ELYBY_API_URL, ELYBY_SKINS_URL, ELYBY_SKIN_UPLOAD_URL, MINECRAFT_DIR
 
 BASE_URL = 'https://authserver.ely.by'
+LOGIN_FILE = os.path.join(MINECRAFT_DIR, 'login_data.json')
 
 
 class AuthError(Exception):
@@ -41,40 +43,40 @@ def _auth(login, password):
 @logged
 def username(val=None):
     if val is None:
-        return read('../data/login.json')['username']
-    dat = read('../data/login.json')
+        return read(LOGIN_FILE)['username']
+    dat = read(LOGIN_FILE)
     dat['username'] = val
-    write('../data/login.json', dat)
+    write(LOGIN_FILE, dat)
     return None
 
 
 @logged
 def uuid(val=None):
     if val is None:
-        return read('../data/login.json')['uuid']
-    dat = read('../data/login.json')
+        return read(LOGIN_FILE)['uuid']
+    dat = read(LOGIN_FILE)
     dat['uuid'] = val
-    write('../data/login.json', dat)
+    write(LOGIN_FILE, dat)
     return None
 
 
 @logged
 def token(val=None):
     if val is None:
-        return read('../data/login.json')['token']
-    dat = read('../data/login.json')
+        return read(LOGIN_FILE)['token']
+    dat = read(LOGIN_FILE)
     dat['token'] = val
-    write('../data/login.json', dat)
+    write(LOGIN_FILE, dat)
     return None
 
 
 @logged
 def logged_in(val=None):
     if val is None:
-        return read('../data/login.json')['logged_in']
-    dat = read('../data/login.json')
+        return read(LOGIN_FILE)['logged_in']
+    dat = read(LOGIN_FILE)
     dat['logged_in'] = val
-    write('../data/login.json', dat)
+    write(LOGIN_FILE, dat)
     return None
 
 
@@ -103,13 +105,13 @@ def write_login_data(data):
         'token': data['token'],
         'logged_in': data.get('logged_in', False),
     }
-    write('../data/login.json', login_data)
+    write(LOGIN_FILE, login_data)
 
 
 def is_logged_in():
     """Проверяет, есть ли активная сессия"""
     try:
-        data = read('../data/login.json')
+        data = read(LOGIN_FILE)
         return data.get('logged_in', False)
     except Exception:
         return False
