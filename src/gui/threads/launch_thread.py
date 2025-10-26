@@ -84,7 +84,7 @@ class LaunchThread(QThread):
                         'username': self.parent_window.ely_session['username'],
                         'uuid': self.parent_window.ely_session['uuid'],
                         'token': self.parent_window.ely_session['token'],
-                        'jvmArguments': options['jvmArguments'] + [f'-javaagent:{AUTHLIB_JAR_PATH}=ely.by'],
+                        'jvmArguments': options['jvmArguments'] + [f'-javaagent:{AUTHLIB_JAR_PATH}=https://authserver.ely.by'],
                     }
                 )
 
@@ -251,7 +251,7 @@ class LaunchThread(QThread):
             if not self.download_authlib():
                 raise Exception('Failed to download authlib-injector')
 
-        options['jvmArguments'].append(f'-javaagent:{AUTHLIB_JAR_PATH}=ely.by')
+        options['jvmArguments'].append(f'-javaagent:{AUTHLIB_JAR_PATH}=https://authserver.ely.by')
         options['jvmArguments'].append(
             '-Dauthlibinjector.yggdrasil.prefetched={...}',
         )

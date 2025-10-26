@@ -257,6 +257,28 @@ class SettingsTab(QWidget):
         """)
         game_layout.addWidget(self.close_on_launch_checkbox)
 
+        self.check_running_processes_checkbox = QCheckBox('Проверять запущенные процессы Minecraft')
+        self.check_running_processes_checkbox.setStyleSheet("""
+            QCheckBox {
+                color: #ffffff;
+                spacing: 6px;
+                font-size: 15px;
+            }
+            QCheckBox::indicator {
+                width: 16px;
+                height: 16px;
+                border: 1px solid #555555;
+                border-radius: 2px;
+                background: #3d3d3d;
+            }
+            QCheckBox::indicator:checked {
+                background: #0078d7;
+                border: 1px solid #0078d7;
+            }
+        """)
+        self.check_running_processes_checkbox.setChecked(True)  # По умолчанию включено
+        game_layout.addWidget(self.check_running_processes_checkbox)
+
         # Автоустановка Java (чекбокс в игровых настройках) - скрыт
         self.auto_java_checkbox_game = QCheckBox('Автоматическая установка Java')
         self.auto_java_checkbox_game.setStyleSheet("""
@@ -491,6 +513,8 @@ class SettingsTab(QWidget):
             self.show_console_checkbox.setChecked(settings['show_console'])
         if 'hide_console_after_launch' in settings:
             self.hide_console_checkbox.setChecked(settings['hide_console_after_launch'])
+        if 'check_running_processes' in settings:
+            self.check_running_processes_checkbox.setChecked(settings['check_running_processes'])
         if 'auto_install_java' in settings:
             checked = bool(settings['auto_install_java'])
             self.auto_java_checkbox_game.setChecked(checked)
@@ -675,6 +699,7 @@ class SettingsTab(QWidget):
                 'minecraft_directory': self.directory_edit.text(),
                 'mods_directory': self.mods_directory_edit.text(),
                 'show_console': self.show_console_checkbox.isChecked(),
-                'hide_console_after_launch': self.hide_console_checkbox.isChecked()
+                'hide_console_after_launch': self.hide_console_checkbox.isChecked(),
+                'check_running_processes': self.check_running_processes_checkbox.isChecked()
             }
             save_settings(self.parent_window.settings)

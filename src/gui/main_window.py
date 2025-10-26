@@ -170,11 +170,11 @@ class MainWindow(QMainWindow):
         self.splash.update_progress(6, 'Загружаем настройки')
         self.settings = load_settings()
 
-        self.splash.update_progress(7, 'Загружаем сессию через ely')
-        self.setup_ely_auth()
-
-        self.splash.update_progress(19, 'Устанавливаем никнейм')
+        self.splash.update_progress(7, 'Устанавливаем никнейм')
         self.last_username = self.settings.get('last_username', '')
+
+        self.splash.update_progress(8, 'Загружаем сессию через ely')
+        self.setup_ely_auth()
 
         self.splash.update_progress(20, 'Постанавливаем избранные версии')
         self.favorites = self.settings.get('favorites', [])
@@ -409,7 +409,11 @@ class MainWindow(QMainWindow):
         self.username = CustomLineEdit(self.game_tab)
         self.username.setPlaceholderText('Введите имя')
         self.username.setMinimumHeight(40)
-        self.username.setText(self.last_username)
+        # Устанавливаем username из сохранённой сессии или последнего использованного
+        if hasattr(self, 'ely_session') and self.ely_session:
+            self.username.setText(self.ely_session['username'])
+        else:
+            self.username.setText(self.last_username)
 
         self.username.setStyleSheet("""
             QLineEdit {
@@ -713,7 +717,12 @@ class MainWindow(QMainWindow):
                     'token': ely.token(),
                 }
                 self.splash.update_progress(11, 'Устанавливаем никнейм')
-                self.username.setText(self.ely_session['username'])
+                # Устанавливаем username только если UI уже создан
+                if hasattr(self, 'username') and self.username is not None:
+                    self.username.setText(self.ely_session['username'])
+                else:
+                    # Сохраняем для последующей установки после создания UI
+                    self.last_username = self.ely_session['username']
                 self.splash.update_progress(12, 'Обновляем интерфейс')
                 self.update_ely_ui(True)
 
@@ -817,6 +826,10 @@ class MainWindow(QMainWindow):
 
     def update_ely_ui(self, logged_in: bool) -> None:
         """Обновляет UI в зависимости от статуса авторизации"""
+        # Проверяем, что UI элементы уже созданы
+        if not hasattr(self, 'ely_login_button') or not hasattr(self, 'change_skin_button'):
+            return
+            
         if logged_in:
             self.ely_login_button.setVisible(False)
             self.change_skin_button.setVisible(True)
@@ -1864,9 +1877,68 @@ class MainWindow(QMainWindow):
         """Закрывает лаунчер после запуска игры"""
         self.close()
 
+    def is_minecraft_running(self) -> bool:
+        """Проверяет, запущен ли уже процесс Minecraft"""
+        try:
+            if platform.system() == 'Windows':
+                # Для Windows используем tasklist
+                result = subprocess.run(
+                    ['tasklist', '/FI', 'IMAGENAME eq java.exe', '/FO', 'CSV'],
+                    capture_output=True,
+                    text=True,
+                    creationflags=subprocess.CREATE_NO_WINDOW
+                )
+                if result.returncode == 0 and 'java.exe' in result.stdout:
+                    # Дополнительная проверка - ищем процессы с аргументами Minecraft
+                    result_detailed = subprocess.run(
+                        ['wmic', 'process', 'where', 'name="java.exe"', 'get', 'commandline'],
+                        capture_output=True,
+                        text=True,
+                        creationflags=subprocess.CREATE_NO_WINDOW
+                    )
+                    if result_detailed.returncode == 0:
+                        command_lines = result_detailed.stdout.lower()
+                        # Проверяем наличие ключевых слов Minecraft
+                        minecraft_keywords = ['minecraft', 'net.minecraft', 'modlauncher', 'forge', 'fabric']
+                        for keyword in minecraft_keywords:
+                            if keyword in command_lines:
+                                logging.info(f'[LAUNCHER] Found running Minecraft process with keyword: {keyword}')
+                                return True
+            else:
+                # Для Linux/macOS используем ps
+                result = subprocess.run(
+                    ['ps', 'aux'],
+                    capture_output=True,
+                    text=True
+                )
+                if result.returncode == 0:
+                    lines = result.stdout.lower()
+                    minecraft_keywords = ['minecraft', 'net.minecraft', 'modlauncher', 'forge', 'fabric']
+                    for keyword in minecraft_keywords:
+                        if keyword in lines and 'java' in lines:
+                            logging.info(f'[LAUNCHER] Found running Minecraft process with keyword: {keyword}')
+                            return True
+            
+            logging.info('[LAUNCHER] No running Minecraft processes found')
+            return False
+            
+        except Exception as e:
+            logging.exception(f'[LAUNCHER] Error checking for running Minecraft processes: {e}')
+            # В случае ошибки разрешаем запуск (безопасный вариант)
+            return False
+
     def launch_game(self) -> None:
         try:
             logging.info('[LAUNCHER] Starting game launch process...')
+
+            # Проверяем, не запущена ли уже игра (если включена проверка)
+            if self.settings.get('check_running_processes', True) and self.is_minecraft_running():
+                QMessageBox.warning(
+                    self, 
+                    'Игра уже запущена', 
+                    'Minecraft уже запущен! Пожалуйста, закройте текущий экземпляр игры перед запуском нового.\n\nВы можете отключить эту проверку в настройках.'
+                )
+                return
 
             username = self.username.text().strip()
             if not username:
