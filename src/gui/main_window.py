@@ -5,8 +5,10 @@ import platform
 import random
 import shutil
 import subprocess
+import sys
 import traceback
 import webbrowser
+from typing import Any
 
 import requests
 from minecraft_launcher_lib.utils import get_version_list
@@ -46,6 +48,9 @@ from util import (
     load_settings,
     resource_path,
     save_settings,
+    save_ely_session,
+    load_ely_session,
+    clear_ely_session,
 )
 from .custom_line_edit import CustomLineEdit
 from .threads.launch_thread import LaunchThread
@@ -107,6 +112,18 @@ class MainWindow(QMainWindow):
     )
 
     def __init__(self) -> None:
+        super().__init__()
+
+        # Загружаем настройки
+        self.settings = load_settings()
+
+        # Загружаем сохранённую сессию Ely.by
+        self.ely_session = load_ely_session(self.settings)
+        if self.ely_session:
+            logging.info(f'✅ Автоматический вход в Ely.by: {self.ely_session.get("username")}')
+        else:
+            logging.info('ℹ️ Нет сохранённой сессии Ely.by')
+
         self.random_name_button = None
         self.ely_login_button = None
         self.open_folder_button = None
@@ -126,7 +143,6 @@ class MainWindow(QMainWindow):
         self.sidebar = None
         self.sidebar_layout = None
         self.sidebar_container = None
-        self.ely_session = None
         self.splash = SplashScreen()
         self.splash.show()
         logging.debug('Инициализация основного окна')
@@ -536,6 +552,11 @@ class MainWindow(QMainWindow):
         loader_index = self.loader_select.findData(self.last_loader)
         if loader_index >= 0:
             self.loader_select.setCurrentIndex(loader_index)
+        
+        # Обновляем UI если есть сохранённая сессия Ely.by
+        if hasattr(self, 'ely_session') and self.ely_session:
+            self.update_ely_ui(True)
+            logging.debug(f'UI обновлён для сохранённой сессии: {self.ely_session.get("username")}')
 
     def setup_ely_auth(self) -> None:
         """Проверяет сохранённую сессию"""
@@ -710,11 +731,8 @@ class MainWindow(QMainWindow):
 
         try:
             self.ely_session = ely.auth_password(email, password)
-            self.update_ely_ui(True)
-            self.username.setText(self.ely_session['username'])
-            QMessageBox.information(self, 'Успешно', 'Авторизация прошла успешно!')
-        except Exception as e:
-            QMessageBox.critical(self, 'Ошибка', str(e))
+            
+            # Сохраняем через старый механизм (для совместимости)
             ely.write_login_data(
                 {
                     'username': self.ely_session['username'],
@@ -723,12 +741,33 @@ class MainWindow(QMainWindow):
                     'logged_in': True,
                 }
             )
+            
+            # Сохраняем через новый механизм (в settings.json)
+            save_ely_session(self.settings, self.ely_session)
+            
+            self.update_ely_ui(True)
+            self.username.setText(self.ely_session['username'])
+            QMessageBox.information(self, 'Успешно', 'Авторизация прошла успешно!')
+        except Exception as e:
+            QMessageBox.critical(self, 'Ошибка', str(e))
 
     def start_device_auth(self, dialog: QInputDialog) -> None:
         """Запуск авторизации через device code"""
         dialog.close()
         try:
             self.ely_session = ely.auth_device_code()
+            
+            # Сохраняем через оба механизма
+            ely.write_login_data(
+                {
+                    'username': self.ely_session['username'],
+                    'uuid': self.ely_session['uuid'],
+                    'token': self.ely_session['token'],
+                    'logged_in': True,
+                }
+            )
+            save_ely_session(self.settings, self.ely_session)
+            
             self.update_ely_ui(True)
             self.username.setText(self.ely_session['username'])
             QMessageBox.information(
@@ -757,6 +796,8 @@ class MainWindow(QMainWindow):
 
         try:
             self.ely_session = ely.auth(email, password)
+            
+            # Сохраняем через оба механизма
             ely.write_login_data(
                 {
                     'username': self.ely_session['username'],
@@ -765,6 +806,8 @@ class MainWindow(QMainWindow):
                     'logged_in': True,
                 }
             )
+            save_ely_session(self.settings, self.ely_session)
+            
             self.update_ely_ui(True)
             self.username.setText(self.ely_session['username'])
             QMessageBox.information(
@@ -777,14 +820,24 @@ class MainWindow(QMainWindow):
 
     def ely_logout(self) -> None:
         """Выход из аккаунта Ely.by"""
-        ely.logout()
-        self.ely_session = None
-        self.update_ely_ui(False)
-        self.username.setText('')
-        # Обновляем кнопку в настройках
-        if hasattr(self.settings_tab, 'update_logout_button_visibility'):
-            self.settings_tab.update_logout_button_visibility()
-        QMessageBox.information(self, 'Выход', 'Вы вышли из аккаунта Ely.by')
+        try:
+            # Очищаем через старый механизм
+            ely.logout()
+            
+            # Очищаем через новый механизм
+            self.ely_session = None
+            clear_ely_session(self.settings)
+            
+            # Обновляем UI
+            self.update_ely_ui(False)
+            self.username.setText('')
+            if hasattr(self, 'settings_tab'):
+                self.settings_tab.update_logout_button_visibility()
+            
+            QMessageBox.information(self, 'Выход', 'Вы вышли из аккаунта Ely.by')
+            logging.info('Выход из Ely.by выполнен')
+        except Exception as e:
+            logging.exception(f'Ошибка при выходе из Ely.by: {e}')
 
     def open_support_tab(self) -> None:
         support_tab = QWidget()

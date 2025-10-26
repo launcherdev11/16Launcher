@@ -67,18 +67,35 @@ def generate_random_username():
 
 
 def download_authlib_injector():
-    """Скачивает последнюю версию Authlib Injector"""
+    """Скачивает последнюю версию authlib-injector с GitHub"""
     try:
+        logging.info('Загрузка authlib-injector...')
         response = requests.get(AUTHLIB_INJECTOR_URL)
+        response.raise_for_status()
         data = response.json()
-        download_url = data['download_url']
+        
+        # GitHub API возвращает массив assets, ищем JAR файл
+        download_url = None
+        for asset in data.get('assets', []):
+            if asset['name'].endswith('.jar'):
+                download_url = asset['browser_download_url']
+                break
+        
+        if not download_url:
+            raise ValueError('JAR файл не найден в релизе')
 
-        response = requests.get(download_url, stream=True)
+        # Скачиваем JAR файл
+        jar_response = requests.get(download_url)
+        jar_response.raise_for_status()
+
+        os.makedirs(os.path.dirname(AUTHLIB_JAR_PATH), exist_ok=True)
         with open(AUTHLIB_JAR_PATH, 'wb') as f:
-            shutil.copyfileobj(response.raw, f)
+            f.write(jar_response.content)
+
+        logging.info(f'authlib-injector загружен: {AUTHLIB_JAR_PATH}')
         return True
     except Exception as e:
-        logging.exception(f'Ошибка загрузки Authlib Injector: {e}')
+        logging.error(f'Ошибка загрузки Authlib Injector: {e}')
         return False
 
 
@@ -155,6 +172,41 @@ def authenticate_ely_by(username, password) -> dict[str, Any] | None:
         }
     print('Ошибка авторизации:', response.text)
     return None
+
+
+def save_ely_session(settings, session_data):
+    """Сохраняет данные сессии Ely.by в настройки"""
+    settings['ely_access_token'] = session_data.get('access_token', '')
+    settings['ely_username'] = session_data.get('username', '')
+    settings['ely_uuid'] = session_data.get('uuid', '')
+    settings['ely_logged_in'] = True
+    save_settings(settings)
+    logging.info(f'Сессия Ely.by сохранена: username={session_data.get("username")}, uuid={session_data.get("uuid")}')
+    logging.debug(f'Токен: {session_data.get("access_token", "")[:20]}...')
+
+
+def load_ely_session(settings):
+    """Загружает сохраненную сессию Ely.by из настроек"""
+    if settings.get('ely_logged_in', False):
+        session = {
+            'access_token': settings.get('ely_access_token', ''),
+            'username': settings.get('ely_username', ''),
+            'uuid': settings.get('ely_uuid', ''),
+        }
+        logging.info(f'Загружена сессия Ely.by: username={session["username"]}, uuid={session["uuid"]}')
+        return session
+    logging.info('Нет сохранённой сессии Ely.by')
+    return None
+
+
+def clear_ely_session(settings):
+    """Очищает сессию Ely.by (выход из аккаунта)"""
+    settings['ely_access_token'] = ''
+    settings['ely_username'] = ''
+    settings['ely_uuid'] = ''
+    settings['ely_logged_in'] = False
+    save_settings(settings)
+    logging.info('Сессия Ely.by очищена')
 
 
 def resource_path(relative_path):

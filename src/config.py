@@ -15,12 +15,17 @@ NEWS_FILE: str = os.path.join(MINECRAFT_DIR, 'launcher_news.json')
 ELYBY_API_URL: str = 'https://authserver.ely.by/api/'
 ELYBY_SKINS_URL: str = 'https://skinsystem.ely.by/skins/'
 ELYBY_AUTH_URL: str = 'https://account.ely.by/oauth2/v1'
+# URL для загрузки/изменения скинов (оставьте пустым '', чтобы отключить функционал загрузки скинов)
+ELYBY_SKIN_UPLOAD_URL: str = ''  # API для загрузки не существует, используйте https://ely.by/skins
+ELYBY_TEXTURES_URL: str = 'https://skinsystem.ely.by/textures/'
 MODS_DIR: str = os.path.join(MINECRAFT_DIR, 'mods')
-AUTHLIB_INJECTOR_URL: str = 'https://authlib-injector.ely.by/artifact/latest.json'
+# Используем GitHub вместо Ely.by из-за проблем с SSL-сертификатом
+AUTHLIB_INJECTOR_URL: str = 'https://api.github.com/repos/yushijinhun/authlib-injector/releases/latest'
 AUTHLIB_JAR_PATH: str = os.path.join(MINECRAFT_DIR, 'authlib-injector.jar')
 CLIENT_ID = '16Launcher1'
-DEVICE_CODE_URL = 'https://authserver.ely.by/oauth2/device'
-TOKEN_URL = 'https://authserver.ely.by/oauth2/token'
+# Ely.by OAuth2 endpoints - используем единый базовый URL
+DEVICE_CODE_URL = f'{ELYBY_AUTH_URL}/device/code'
+TOKEN_URL = f'{ELYBY_AUTH_URL}/token'
 headers = {'Content-Type': 'application/json', 'User-Agent': '16Launcher/1.0'}
 default_settings = {
     'show_motd': True,
@@ -33,6 +38,11 @@ default_settings = {
     'last_version': '',
     'last_loader': 'vanilla',
     'show_snapshots': False,
+    # Ely.by session data
+    'ely_access_token': '',
+    'ely_username': '',
+    'ely_uuid': '',
+    'ely_logged_in': False,
 }
 adjectives = [
     'Cool',

@@ -15,13 +15,16 @@ from PyQt5.QtWidgets import (
     QVBoxLayout,
 )
 
-from config import ELYBY_AUTH_URL, ELYBY_SKINS_URL, SKINS_DIR
+from config import ELYBY_AUTH_URL, ELYBY_SKINS_URL, SKINS_DIR, ELYBY_SKIN_UPLOAD_URL
 
 
 class ElyBySkinManager:
     @staticmethod
     def get_skin_url(username):
         """Получаем URL скина для указанного пользователя"""
+        if not ELYBY_SKINS_URL:
+            logging.warning('URL для скинов не настроен в config.py')
+            return None
         try:
             response = requests.get(
                 f'{ELYBY_SKINS_URL}{username}.png',

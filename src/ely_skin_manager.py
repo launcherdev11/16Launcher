@@ -4,7 +4,7 @@ import shutil
 
 import requests
 
-from config import MINECRAFT_DIR, SKINS_DIR
+from config import MINECRAFT_DIR, SKINS_DIR, ELYBY_SKIN_UPLOAD_URL, ELYBY_SKINS_URL, ELYBY_TEXTURES_URL
 
 
 class ElySkinManager:
@@ -39,8 +39,10 @@ class ElySkinManager:
     @staticmethod
     def get_skin_texture_url(username):
         """Получаем URL текстуры скина через текстуры-прокси"""
+        if not ELYBY_TEXTURES_URL:
+            return None
         try:
-            response = requests.get(f'https://skinsystem.ely.by/textures/{username}')
+            response = requests.get(f'{ELYBY_TEXTURES_URL}{username}')
             if response.status_code == 200:
                 data = response.json()
                 return data.get('textures', {}).get('SKIN', {}).get('url')
@@ -52,13 +54,20 @@ class ElySkinManager:
     @staticmethod
     def get_skin_image_url(username):
         """Получаем URL изображения скина"""
-        return f'https://skinsystem.ely.by/skins/{username}.png'
+        if not ELYBY_SKINS_URL:
+            return None
+        return f'{ELYBY_SKINS_URL}{username}.png'
 
     @staticmethod
     def download_skin(username):
         """Скачиваем скин с Ely.by"""
+        if not ELYBY_SKINS_URL:
+            logging.warning('URL для скинов не настроен в config.py')
+            return False
         try:
             skin_url = ElySkinManager.get_skin_image_url(username)
+            if not skin_url:
+                return False
             response = requests.get(skin_url, stream=True)
             if response.status_code == 200:
                 os.makedirs(SKINS_DIR, exist_ok=True)
@@ -79,8 +88,10 @@ class ElySkinManager:
         :param access_token: токен доступа Ely.by
         :param variant: тип модели ("classic" или "slim")
         """
+        if not ELYBY_SKIN_UPLOAD_URL:
+            return False, 'Загрузка скинов отключена. Используйте https://ely.by/skins для загрузки скина вручную.'
+        
         try:
-            url = 'https://account.ely.by/api/resources/skin'
             headers = {'Authorization': f'Bearer {access_token}'}
 
             with open(file_path, 'rb') as f:
@@ -89,7 +100,7 @@ class ElySkinManager:
                     'variant': (None, variant),
                 }
 
-                response = requests.put(url, headers=headers, files=files)
+                response = requests.put(ELYBY_SKIN_UPLOAD_URL, headers=headers, files=files)
 
                 if response.status_code == 200:
                     return True, 'Скин успешно загружен!'
@@ -103,10 +114,13 @@ class ElySkinManager:
     @staticmethod
     def reset_skin(access_token):
         """Сбрасывает скин на стандартный"""
+        if not ELYBY_SKIN_UPLOAD_URL:
+            return False, 'Сброс скинов отключен. Используйте https://ely.by/skins для управления скином.'
+        
         try:
             headers = {'Authorization': f'Bearer {access_token}'}
             response = requests.delete(
-                'https://account.ely.by/api/resources/skin',
+                ELYBY_SKIN_UPLOAD_URL,
                 headers=headers,
             )
 

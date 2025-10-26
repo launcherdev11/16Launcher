@@ -5,6 +5,7 @@ import requests
 from ely_device import authorize_via_device_code
 from flow import logged
 from util import read, write
+from config import ELYBY_API_URL, ELYBY_SKINS_URL, ELYBY_SKIN_UPLOAD_URL
 
 BASE_URL = 'https://authserver.ely.by'
 
@@ -143,7 +144,9 @@ def auth_password(email, password):
 
 def get_skin_url(username):
     """Получает URL скина пользователя"""
-    response = requests.get(f'https://skinsystem.ely.by/skins/{username}.png')
+    if not ELYBY_SKINS_URL:
+        return None
+    response = requests.get(f'{ELYBY_SKINS_URL}{username}.png')
     return response.url if response.status_code == 200 else None
 
 
