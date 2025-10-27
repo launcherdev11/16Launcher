@@ -34,7 +34,7 @@ LicenseFile=License
 ; Выходные файлы
 OutputDir=installer_output
 OutputBaseFilename=16Launcher_Setup
-; SetupIconFile=assets\iconinstall.ico - временно отключено из-за ошибки
+SetupIconFile=assets\iconinstall.ico
 UninstallDisplayIcon={app}\{#MyAppExeName}
 
 ; Сжатие
@@ -47,8 +47,9 @@ PrivilegesRequired=admin
 ; Современный стиль
 WizardStyle=modern
 
-; Визуальное оформление - временно отключено из-за ошибки с изображениями
-; WizardSmallImageFile=assets\icon.ico
+; Визуальное оформление
+WizardSmallImageFile=assets\icon.ico
+WizardImageFile=assets\icon.ico
 
 ; Языки
 ShowLanguageDialog=yes

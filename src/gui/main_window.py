@@ -42,6 +42,7 @@ import ely
 from config import AUTHLIB_JAR_PATH, MINECRAFT_DIR, SKINS_DIR
 from ely_by_skin_manager import ElyBySkinManager
 from ely_skin_manager import ElySkinManager
+from discord_rpc import get_discord_rpc, init_discord_rpc, shutdown_discord_rpc
 from translator import Translator
 from util import (
     download_authlib_injector,
@@ -256,6 +257,15 @@ class MainWindow(QMainWindow):
         self.splash.close()
         logging.debug('Инициализация завершена')
         del self.splash
+        
+        # Инициализируем Discord Rich Presence
+        logging.info('Инициализация Discord Rich Presence...')
+        init_discord_rpc()
+        
+        # Устанавливаем начальный статус
+        discord_rpc = get_discord_rpc()
+        if discord_rpc.is_connected:
+            discord_rpc.set_menu_status()
 
 
     def setup_modloader_tabs(self) -> None:
@@ -791,6 +801,18 @@ class MainWindow(QMainWindow):
 
     def handle_tab_changed(self, index: int) -> None:
         """Обработчик смены вкладок"""
+        # Обновляем статус Discord в зависимости от активной вкладки
+        discord_rpc = get_discord_rpc()
+        if not discord_rpc.is_connected:
+            return
+        
+        tab_names = ['Запуск игры', 'Моды', 'Мои сборки']
+        if index < len(tab_names):
+            status_details = f'Просматривает {tab_names[index]}'
+            discord_rpc.update_status(
+                state=status_details,
+                details='В лаунчере',
+            )
 
     def update_login_button_text(self) -> None:
         self.ely_login_button.setText(
@@ -801,6 +823,11 @@ class MainWindow(QMainWindow):
         """Переключает на вкладку с игрой"""
         self.stacked_widget.setCurrentWidget(self.tab_widget)
         self.tabs.setCurrentIndex(0)
+        
+        # Обновляем статус Discord
+        discord_rpc = get_discord_rpc()
+        if discord_rpc.is_connected:
+            discord_rpc.set_menu_status()
 
     def toggle_theme(self) -> None:
         current_theme = getattr(self, 'current_theme', 'dark')
@@ -823,6 +850,14 @@ class MainWindow(QMainWindow):
     def show_settings_tab(self) -> None:
         """Переключает на вкладку с настройками"""
         self.stacked_widget.setCurrentWidget(self.settings_tab)
+        
+        # Обновляем статус Discord
+        discord_rpc = get_discord_rpc()
+        if discord_rpc.is_connected:
+            discord_rpc.update_status(
+                state='Просматривает настройки',
+                details='В лаунчере',
+            )
 
     def update_ely_ui(self, logged_in: bool) -> None:
         """Обновляет UI в зависимости от статуса авторизации"""
@@ -1871,6 +1906,11 @@ class MainWindow(QMainWindow):
             self.settings['hide_console_after_launch'] = self.settings_tab.hide_console_checkbox.isChecked()
             
         save_settings(self.settings)
+        
+        # Отключаем Discord RPC
+        logging.info('Отключение Discord Rich Presence...')
+        shutdown_discord_rpc()
+        
         event.accept()
 
     def close_launcher(self) -> None:
@@ -1958,6 +1998,11 @@ class MainWindow(QMainWindow):
                 f'Memory: {memory_mb}MB, '
                 f'Close on launch: {close_on_launch}',
             )
+            
+            # Обновляем статус Discord
+            discord_rpc = get_discord_rpc()
+            if discord_rpc.is_connected:
+                discord_rpc.set_launching_status()
 
             # Handle Ely.by session
             if not hasattr(self, 'ely_session'):
@@ -2005,6 +2050,11 @@ class MainWindow(QMainWindow):
                 close_on_launch,
             )
             self.launch_thread.start()
+            
+            # Обновляем статус Discord на "Играет в Minecraft"
+            discord_rpc = get_discord_rpc()
+            if discord_rpc.is_connected:
+                discord_rpc.set_playing_status(version, loader_type)
 
         except Exception as e:
             logging.exception(f'[ERROR] Launch failed: {e!s}')
@@ -2037,6 +2087,11 @@ class MainWindow(QMainWindow):
                 hasattr(self.settings_tab, 'show_console_checkbox') and 
                 self.settings_tab.show_console_checkbox.isChecked()):
                 self.console_widget.hide_console()
+            
+            # Обновляем статус Discord на "В меню лаунчера"
+            discord_rpc = get_discord_rpc()
+            if discord_rpc.is_connected:
+                discord_rpc.set_menu_status()
 
     def on_launch_log(self, message: str) -> None:
         """Обработчик логов от launch_thread"""

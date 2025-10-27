@@ -1,67 +1,82 @@
-.PHONY: help sync pre-commit setup run test lint fmt build dist install-app check-deps
+# Makefile для сборки 16Launcher
 
+APP_NAME = 16Launcher
+APP_VERSION = 1.0.3
+
+.PHONY: all windows linux macos clean install-deps help
+
+# По умолчанию собираем для текущей платформы
+all:
+	@echo "Сборка для текущей платформы..."
+	@python3 build.py
+
+# Сборка для Windows
+windows:
+	@echo "Сборка для Windows..."
+	@python3 build.py --platform windows
+
+# Сборка для Linux
+linux:
+	@echo "Сборка для Linux..."
+	@python3 build.py --platform linux
+
+# Сборка для macOS
+macos:
+	@echo "Сборка для macOS..."
+	@python3 build.py --platform macos
+
+# Сборка для всех платформ
+all-platforms:
+	@echo "Сборка для всех платформ..."
+	@python3 build.py --platform all
+
+# Создание установщиков
+installer-windows:
+	@echo "Создание установщика Windows..."
+	@python3 build.py --platform windows --installer
+
+installer-linux:
+	@echo "Создание установщика Linux..."
+	@python3 build.py --platform linux --installer
+
+installer-macos:
+	@echo "Создание установщика macOS..."
+	@python3 build.py --platform macos --installer
+
+installer-all:
+	@echo "Создание установщиков для всех платформ..."
+	@python3 build.py --platform all --installer
+
+# Установка зависимостей
+install-deps:
+	@echo "Установка зависимостей..."
+	pip install PyInstaller PyQt5 requests
+
+# Очистка
+clean:
+	@echo "Очистка временных файлов..."
+	@python3 build.py --clean
+	rm -rf dist/
+	rm -rf build/
+	rm -rf *.spec
+	rm -rf __pycache__/
+	rm -rf src/__pycache__/
+	rm -rf src/gui/__pycache__/
+	rm -rf src/gui/threads/__pycache__/
+	rm -rf src/gui/widgets/__pycache__/
+
+# Справка
 help:
-	@echo Available commands:
-	@echo * sync           - Sync dependencies
-	@echo * pre-commit     - Setup pre-commit hooks
-	@echo * setup          - Full project setup (venv + deps + pre-commit)
-	@echo * run            - Run application
-	@echo * test           - Run tests with coverage
-	@echo * lint           - Check code with ruff
-	@echo * fmt            - Format code with ruff
-	@echo * build          - Build project
-	@echo * dist           - Create executable
-	@echo * install-app    - Install application to system
-	@echo * check-deps     - Check dependencies
-
-sync:
-	@echo "Syncing dependencies..."
-	uv sync --all-groups
-	@echo "Dependencies synced"
-
-pre-commit:
-	@echo "Setting up pre-commit hooks..."
-	uv run pre-commit install
-	uv run pre-commit install --hook-type commit-msg
-	@echo "Pre-commit hooks configured"
-
-setup: sync pre-commit
-	@echo "Project fully configured!"
-
-run:
-	@echo "Starting 16Launcher..."
-	uv run main.py
-
-test:
-	@echo "Running tests..."
-	uv run pytest
-
-lint:
-	@echo "Checking code..."
-	uv run ruff check src/
-	uv run mypy src/
-
-fmt:
-	@echo "Formatting code..."
-	uv run ruff format src/
-	uv run ruff check --fix src/
-
-build:
-	@echo "Building project..."
-	uv run build
-	@echo "Project built"
-
-dist: build
-	@echo "Creating executable..."
-	uv run PyInstaller 16Launcher.spec
-	@echo "Executable created"
-
-install-app: build
-	@echo "Installing application..."
-	uv run pip install dist/*.whl
-	@echo "Application installed"
-
-check-deps:
-	@echo "Checking dependencies..."
-	uv run pip list
-	@echo "Check completed"
+	@echo "Доступные команды:"
+	@echo "  make all              - Сборка для текущей платформы"
+	@echo "  make windows          - Сборка для Windows"
+	@echo "  make linux            - Сборка для Linux"
+	@echo "  make macos            - Сборка для macOS"
+	@echo "  make all-platforms    - Сборка для всех платформ"
+	@echo "  make installer-windows - Создание установщика Windows"
+	@echo "  make installer-linux   - Создание установщика Linux"
+	@echo "  make installer-macos   - Создание установщика macOS"
+	@echo "  make installer-all     - Создание установщиков для всех платформ"
+	@echo "  make install-deps      - Установка зависимостей"
+	@echo "  make clean             - Очистка временных файлов"
+	@echo "  make help              - Показать эту справку"

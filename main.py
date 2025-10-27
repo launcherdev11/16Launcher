@@ -1,5 +1,6 @@
 import sys
 import os
+import atexit
 
 # Добавляем путь к модулям СНАЧАЛА
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'src'))
@@ -16,6 +17,7 @@ from PyQt5.QtWidgets import QApplication
 
 from gui.main_window import MainWindow
 from util import setup_directories
+from discord_rpc import shutdown_discord_rpc
 
 logging.basicConfig(
     level=logging.DEBUG,
@@ -30,6 +32,10 @@ logging.basicConfig(
 if __name__ == '__main__':
     logging.info('Initializing directories')
     setup_directories()
+    
+    # Регистрируем отключение Discord RPC при завершении программы
+    atexit.register(shutdown_discord_rpc)
+    
     logging.info('Creating application')
     app = QApplication(sys.argv)
     window = MainWindow()

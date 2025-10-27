@@ -53,6 +53,7 @@ prod = [
     "pyqt5==5.15.11",
     "pyqt5-qt5==5.15.2",
     "beautifulsoup4==4.12.2",
+    "pypresence==4.2.1",
 ]
 dev = [
     "mypy==1.17.1",
