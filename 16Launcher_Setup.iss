@@ -9,12 +9,12 @@
 
 [Setup]
 ; Основная информация о программе
-AppName={#MyAppName}
-AppVersion={#MyAppVersion}
+AppName={#16Launcher}
+AppVersion={#1.0.3}
 AppPublisher={#MyAppPublisher}
-AppPublisherURL={#MyAppURL}
-AppSupportURL={#MyAppURL}
-AppUpdatesURL={#MyAppURL}
+AppPublisherURL={#https://16luncher.ru}
+AppSupportURL={#https://16luncher.ru}
+AppUpdatesURL={#https://16luncher.ru}
 AppCopyright=Copyright (C) 2024 16Launcher Team
 VersionInfoVersion=1.0.3.0
 VersionInfoCompany=16Launcher Team
@@ -43,6 +43,14 @@ SolidCompression=yes
 
 ; Права администратора
 PrivilegesRequired=admin
+
+; Автоматическое закрытие и перезапуск приложения во время обновления
+CloseApplications=yes
+RestartApplications=yes
+; Стабильный мьютекс приложения для корректного детекта запущенного экземпляра
+AppMutex=16LauncherMutex
+; Ограничение списка закрываемых процессов (не обязательно, но полезно)
+CloseApplicationsFilter=**\16Launcher.exe
 
 ; Современный стиль
 WizardStyle=modern

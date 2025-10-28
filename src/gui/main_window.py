@@ -44,6 +44,8 @@ from ely_by_skin_manager import ElyBySkinManager
 from ely_skin_manager import ElySkinManager
 from discord_rpc import get_discord_rpc, init_discord_rpc, shutdown_discord_rpc
 from translator import Translator
+from version import VERSION
+from updater import get_latest_release_info, download_installer_with_verify
 from util import (
     download_authlib_injector,
     generate_random_username,
@@ -155,7 +157,7 @@ class MainWindow(QMainWindow):
         super().__init__()
 
         self.splash.update_progress(2, 'Установка заголовка окна...')
-        self.setWindowTitle('16Launcher 1.0.3')
+        self.setWindowTitle(f'16Launcher {VERSION}')
 
         self.splash.update_progress(3, 'Установка размера окна...')
         self.setFixedSize(1280, 720)
@@ -266,6 +268,70 @@ class MainWindow(QMainWindow):
         discord_rpc = get_discord_rpc()
         if discord_rpc.is_connected:
             discord_rpc.set_menu_status()
+
+        # Проверка обновлений при старте
+        try:
+            if self.settings.get('check_updates_on_start', True):
+                self.check_for_updates(auto=self.settings.get('auto_update', False))
+        except Exception as e:
+            logging.exception(f'[UPDATER] Ошибка проверки обновлений при старте: {e}')
+
+    def check_for_updates(self, auto: bool = False) -> None:
+        info = get_latest_release_info()
+        if not info or not info.has_update or not info.setup_url:
+            return
+
+        latest = info.latest_version
+        if auto:
+            self.perform_update(info)
+            return
+
+        reply = QMessageBox.question(
+            self,
+            'Обновление доступно',
+            f'Доступна новая версия {latest}. Установить сейчас?',
+            QMessageBox.Yes | QMessageBox.No,
+            QMessageBox.Yes,
+        )
+        if reply == QMessageBox.Yes:
+            self.perform_update(info)
+
+    def perform_update(self, info) -> None:
+        try:
+            self.start_progress_label.setText('Скачивание обновления...')
+            self.start_progress_label.setVisible(True)
+            self.start_progress.setVisible(True)
+            QApplication.processEvents()
+
+            installer_path = download_installer_with_verify(info.setup_url, info.sha256_url)
+            if not installer_path:
+                QMessageBox.critical(self, 'Ошибка', 'Не удалось скачать обновление.')
+                self.start_progress_label.setVisible(False)
+                self.start_progress.setVisible(False)
+                return
+
+            # Запуск Inno Setup установщика в тихом режиме
+            args = [
+                installer_path,
+                '/VERYSILENT',
+                '/SUPPRESSMSGBOXES',
+                '/NORESTART',
+                '/CLOSEAPPLICATIONS',
+                '/RESTARTAPPLICATIONS',
+            ]
+            try:
+                subprocess.Popen(args)
+            except Exception as e:
+                logging.exception(f'[UPDATER] Не удалось запустить установщик: {e}')
+                QMessageBox.critical(self, 'Ошибка', 'Не удалось запустить установщик обновления.')
+                return
+
+            # Закрываем лаунчер, установщик перезапустит приложение при необходимости
+            QApplication.processEvents()
+            self.close()
+        finally:
+            self.start_progress_label.setVisible(False)
+            self.start_progress.setVisible(False)
 
 
     def setup_modloader_tabs(self) -> None:

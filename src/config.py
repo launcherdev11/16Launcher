@@ -43,6 +43,9 @@ default_settings = {
     'last_loader': 'vanilla',
     'show_snapshots': False,
     'auto_install_java': False,
+    # Обновления лаунчера
+    'check_updates_on_start': True,
+    'auto_update': False,
     # Ely.by session data
     'ely_access_token': '',
     'ely_username': '',

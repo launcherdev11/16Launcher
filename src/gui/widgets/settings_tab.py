@@ -445,6 +445,69 @@ class SettingsTab(QWidget):
         builds_layout.addLayout(export_path_layout)
         settings_layout.addWidget(builds_card)
 
+        # Обновления лаунчера
+        updates_card = QWidget()
+        updates_card.setStyleSheet(card_style)
+        updates_layout = QVBoxLayout(updates_card)
+        updates_layout.setSpacing(7)
+        updates_header = QLabel('Обновления')
+        updates_header.setStyleSheet(header_style)
+        updates_layout.addWidget(updates_header)
+
+        self.check_updates_checkbox = QCheckBox('Проверять обновления при запуске')
+        self.check_updates_checkbox.setStyleSheet("""
+            QCheckBox {
+                color: #ffffff;
+                spacing: 6px;
+                font-size: 15px;
+            }
+            QCheckBox::indicator {
+                width: 16px;
+                height: 16px;
+                border: 1px solid #555555;
+                border-radius: 2px;
+                background: #3d3d3d;
+            }
+            QCheckBox::indicator:checked {
+                background: #0078d7;
+                border: 1px solid #0078d7;
+            }
+        """)
+        updates_layout.addWidget(self.check_updates_checkbox)
+
+        self.auto_update_checkbox = QCheckBox('Автоматически устанавливать обновления')
+        self.auto_update_checkbox.setStyleSheet(self.check_updates_checkbox.styleSheet())
+        updates_layout.addWidget(self.auto_update_checkbox)
+
+        # Кнопка ручной проверки обновлений
+        self.check_updates_now_btn = QPushButton('Проверить обновления сейчас')
+        self.check_updates_now_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #3d3d3d;
+                border: 1px solid #555555;
+                border-radius: 4px;
+                padding: 6px 10px;
+                color: white;
+                font-size: 15px;
+            }
+            QPushButton:hover { background-color: #4d4d4d; }
+        """)
+        if self.parent_window and hasattr(self.parent_window, 'check_for_updates'):
+            self.check_updates_now_btn.clicked.connect(lambda: self.parent_window.check_for_updates(auto=False))
+        updates_layout.addWidget(self.check_updates_now_btn)
+
+        # Сохранение настроек обновлений
+        def save_updates_settings():
+            if self.parent_window:
+                self.parent_window.settings['check_updates_on_start'] = self.check_updates_checkbox.isChecked()
+                self.parent_window.settings['auto_update'] = self.auto_update_checkbox.isChecked()
+                save_settings(self.parent_window.settings)
+
+        self.check_updates_checkbox.toggled.connect(save_updates_settings)
+        self.auto_update_checkbox.toggled.connect(save_updates_settings)
+
+        settings_layout.addWidget(updates_card)
+
         # Добавляем растягивающийся элемент в конец
         settings_layout.addStretch()
 
@@ -488,6 +551,12 @@ class SettingsTab(QWidget):
 
         # Обновляем подпись памяти под текущее значение
         self.update_memory_label()
+
+        # Загружаем настройки обновлений
+        if 'check_updates_on_start' in settings:
+            self.check_updates_checkbox.setChecked(bool(settings['check_updates_on_start']))
+        if 'auto_update' in settings:
+            self.auto_update_checkbox.setChecked(bool(settings['auto_update']))
 
         # Принудительно обновляем стили
         self.style().unpolish(self)

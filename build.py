@@ -24,6 +24,26 @@ class Colors:
 def print_status(message):
     print(f"{Colors.BLUE}[INFO]{Colors.NC} {message}")
 
+def sha256sum(path: str) -> str:
+    import hashlib
+    h = hashlib.sha256()
+    with open(path, 'rb') as f:
+        for chunk in iter(lambda: f.read(1024 * 1024), b''):
+            h.update(chunk)
+    return h.hexdigest()
+
+def write_sha256sums(output_dir: str, filenames: list[str]) -> str:
+    """Генерирует SHA256SUMS в текстовом формате: "<hash>  <filename>""" 
+    lines = []
+    for name in filenames:
+        path = os.path.join(output_dir, name)
+        if os.path.exists(path):
+            lines.append(f"{sha256sum(path)}  {name}")
+    out_path = os.path.join(output_dir, 'SHA256SUMS')
+    with open(out_path, 'w', encoding='utf-8') as f:
+        f.write("\n".join(lines) + "\n")
+    return out_path
+
 def print_success(message):
     print(f"{Colors.GREEN}[SUCCESS]{Colors.NC} {message}")
 
