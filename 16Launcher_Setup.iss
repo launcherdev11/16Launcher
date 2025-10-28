@@ -9,12 +9,12 @@
 
 [Setup]
 ; Основная информация о программе
-AppName={#16Launcher}
-AppVersion={#1.0.3}
+AppName={#MyAppName}
+AppVersion={#MyAppVersion}
 AppPublisher={#MyAppPublisher}
-AppPublisherURL={#https://16luncher.ru}
-AppSupportURL={#https://16luncher.ru}
-AppUpdatesURL={#https://16luncher.ru}
+AppPublisherURL={#MyAppURL}
+AppSupportURL={#MyAppURL}
+AppUpdatesURL={#MyAppURL}
 AppCopyright=Copyright (C) 2024 16Launcher Team
 VersionInfoVersion=1.0.3.0
 VersionInfoCompany=16Launcher Team
@@ -56,8 +56,9 @@ CloseApplicationsFilter=**\16Launcher.exe
 WizardStyle=modern
 
 ; Визуальное оформление
-WizardSmallImageFile=assets\icon.ico
-WizardImageFile=assets\icon.ico
+; Use default wizard images (custom images must be valid BMP files)
+; WizardSmallImageFile=assets\wizard_small.bmp
+; WizardImageFile=assets\wizard_large.bmp
 
 ; Языки
 ShowLanguageDialog=yes
@@ -111,9 +112,9 @@ Type: filesandordirs; Name: "{app}\config"
 [Registry]
 ; Регистрация программы в системе
 Root: HKLM; Subkey: "Software\Microsoft\Windows\CurrentVersion\Uninstall\16Launcher"; ValueType: string; ValueName: "DisplayName"; ValueData: "16Launcher"
-Root: HKLM; Subkey: "Software\Microsoft\Windows\CurrentVersion\Uninstall\16Launcher"; ValueType: string; ValueName: "DisplayVersion"; ValueData: "1.0.3"
-Root: HKLM; Subkey: "Software\Microsoft\Windows\CurrentVersion\Uninstall\16Launcher"; ValueType: string; ValueName: "Publisher"; ValueData: "16Launcher Team"
-Root: HKLM; Subkey: "Software\Microsoft\Windows\CurrentVersion\Uninstall\16Launcher"; ValueType: string; ValueName: "DisplayIcon"; ValueData: "{app}\16Launcher.exe"
+Root: HKLM; Subkey: "Software\Microsoft\Windows\CurrentVersion\Uninstall\16Launcher"; ValueType: string; ValueName: "DisplayVersion"; ValueData: "{#MyAppVersion}"
+Root: HKLM; Subkey: "Software\Microsoft\Windows\CurrentVersion\Uninstall\16Launcher"; ValueType: string; ValueName: "Publisher"; ValueData: "{#MyAppPublisher}"
+Root: HKLM; Subkey: "Software\Microsoft\Windows\CurrentVersion\Uninstall\16Launcher"; ValueType: string; ValueName: "DisplayIcon"; ValueData: "{app}\{#MyAppExeName}"
 
 [CustomMessages]
 ; Русские сообщения

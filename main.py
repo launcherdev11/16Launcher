@@ -33,7 +33,6 @@ if __name__ == '__main__':
     logging.info('Initializing directories')
     setup_directories()
     
-    # Регистрируем отключение Discord RPC при завершении программы
     atexit.register(shutdown_discord_rpc)
     
     logging.info('Creating application')
