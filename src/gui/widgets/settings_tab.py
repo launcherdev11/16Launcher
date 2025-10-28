@@ -2,12 +2,10 @@ import logging
 import os
 import subprocess
 
-from PyQt5.QtCore import QSize, Qt
-from PyQt5.QtGui import QIcon
+from PyQt5.QtCore import Qt
 from PyQt5.QtWidgets import (
     QApplication,
     QCheckBox,
-    QComboBox,
     QFileDialog,
     QHBoxLayout,
     QLabel,
@@ -89,53 +87,10 @@ class SettingsTab(QWidget):
         appearance_header.setStyleSheet(header_style)
         appearance_layout.addWidget(appearance_header)
 
-        # Язык
-        language_layout = QHBoxLayout()
-        language_label = QLabel('Язык:')
-        language_label.setStyleSheet('color: #ffffff; font-size: 15px;')
-        self.language_combo = QComboBox()
-        self.language_combo.addItem('Русский', 'ru')
-        self.language_combo.addItem('English', 'en')
-        self.language_combo.setStyleSheet("""
-            QComboBox {
-                background-color: #3d3d3d;
-                border: 1px solid #555555;
-                border-radius: 4px;
-                padding: 2px 5px;
-                color: white;
-                min-width: 90px;
-                font-size: 15px;
-            }
-            QComboBox::drop-down {
-                border: none;
-            }
-        """)
-        language_layout.addWidget(language_label)
-        language_layout.addWidget(self.language_combo)
-        appearance_layout.addLayout(language_layout)
+        # Временно скрываем категорию "Внешний вид"
+        appearance_card.setVisible(False)
 
         #консоль
-
-        # Тема
-        self.theme_button = QPushButton()
-        self.theme_button.setFixedHeight(32)
-        self.update_theme_button_icon()
-        self.theme_button.setStyleSheet("""
-            QPushButton {
-                background-color: #3d3d3d;
-                border: 1px solid #555555;
-                border-radius: 5px;
-                padding: 8px;
-                text-align: left;
-                color: white;
-                font-size: 15px;
-            }
-            QPushButton:hover {
-                background-color: #4d4d4d;
-            }
-        """)
-        self.theme_button.clicked.connect(self.toggle_theme)
-        appearance_layout.addWidget(self.theme_button)
 
         settings_layout.addWidget(appearance_card)
 
@@ -434,32 +389,35 @@ class SettingsTab(QWidget):
         versions_layout.addWidget(self.auto_java_checkbox_versions)
         settings_layout.addWidget(versions_card)
 
-        # Аккаунт Ely.by
-        if hasattr(self.parent_window, 'ely_session') and self.parent_window.ely_session:
-            ely_card = QWidget()
-            ely_card.setStyleSheet(card_style)
-            ely_layout = QVBoxLayout(ely_card)
-            ely_layout.setSpacing(7)
-            ely_header = QLabel('Аккаунт Ely.by')
-            ely_header.setStyleSheet(header_style)
-            ely_layout.addWidget(ely_header)
-            self.ely_logout_button = QPushButton('Выйти из Ely.by')
-            self.ely_logout_button.setStyleSheet("""
-                QPushButton {
-                    background-color: #dc3545;
-                    color: white;
-                    padding: 4px;
-                    border-radius: 4px;
-                    border: none;
-                    font-size: 15px;
-                }
-                QPushButton:hover {
-                    background-color: #c82333;
-                }
-            """)
+        # Аккаунт Ely.by (карточку создаём всегда, кнопку показываем только при входе)
+        ely_card = QWidget()
+        ely_card.setStyleSheet(card_style)
+        ely_layout = QVBoxLayout(ely_card)
+        ely_layout.setSpacing(7)
+        ely_header = QLabel('Аккаунт Ely.by')
+        ely_header.setStyleSheet(header_style)
+        ely_layout.addWidget(ely_header)
+        self.ely_logout_button = QPushButton('Выйти из Ely.by')
+        self.ely_logout_button.setStyleSheet("""
+            QPushButton {
+                background-color: #dc3545;
+                color: white;
+                padding: 4px;
+                border-radius: 4px;
+                border: none;
+                font-size: 15px;
+            }
+            QPushButton:hover {
+                background-color: #c82333;
+            }
+        """)
+        if self.parent_window is not None:
             self.ely_logout_button.clicked.connect(self.parent_window.ely_logout)
-            ely_layout.addWidget(self.ely_logout_button)
-            settings_layout.addWidget(ely_card)
+        ely_layout.addWidget(self.ely_logout_button)
+        # Устанавливаем начальную видимость в зависимости от наличия сессии
+        has_session = bool(getattr(self.parent_window, 'ely_session', None))
+        self.ely_logout_button.setVisible(has_session)
+        settings_layout.addWidget(ely_card)
 
         # Сборки
         builds_card = QWidget()
@@ -581,49 +539,7 @@ class SettingsTab(QWidget):
             logging.exception(f'Ошибка при открытии директории модов: {e}')
             self.show_error_message('Ошибка при открытии директории модов')
 
-    def setup_language_selector(self):
-        self.language_combo = QComboBox()
-        self.language_combo.addItem('Русский', 'ru')
-        self.language_combo.addItem('English', 'en')
-        self.language_combo.currentIndexChanged.connect(self.change_language)
-
-        language_layout = QHBoxLayout()
-        language_label = QLabel('Язык:')
-        language_label.setStyleSheet('color: #ffffff;')
-        language_layout.addWidget(language_label)
-        language_layout.addWidget(self.language_combo)
-
-        appearance_layout = self.findChild(QVBoxLayout)
-        if appearance_layout:
-            appearance_layout.insertLayout(0, language_layout)
-
-    def change_language(self):
-        lang = self.language_combo.currentData()
-        self.translator.set_language(lang)
-        self.parent_window.retranslate_ui()
-
-    def toggle_theme(self):
-        """Переключает тему между светлой и темной"""
-        current_theme = getattr(self.parent_window, 'current_theme', 'dark')
-        new_theme = 'light' if current_theme == 'dark' else 'dark'
-
-        self.parent_window.apply_dark_theme(
-            new_theme == 'dark',
-        )
-        self.update_theme_button_icon()
-
-        self.parent_window.settings['theme'] = new_theme
-        save_settings(self.parent_window.settings)
-
-    def update_theme_button_icon(self):
-        current_theme = getattr(self.parent_window, 'current_theme', 'dark')
-        if current_theme == 'dark':
-            self.theme_button.setIcon(QIcon(resource_path('assets/sun.png')))
-            self.theme_button.setText(' Светлая тема')
-        else:
-            self.theme_button.setIcon(QIcon(resource_path('assets/moon.png')))
-            self.theme_button.setText(' Тёмная тема')
-        self.theme_button.setIconSize(QSize(24, 24))
+    
 
     def update_logout_button_visibility(self):
         """Обновляет видимость кнопки выхода из Ely.by"""
@@ -633,7 +549,7 @@ class SettingsTab(QWidget):
             return
         
         # Проверяем наличие сессии
-        has_session = hasattr(self.parent(), 'ely_session') and self.parent().ely_session
+        has_session = bool(getattr(self.parent_window, 'ely_session', None))
         self.ely_logout_button.setVisible(has_session)
 
     def choose_directory(self):

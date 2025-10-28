@@ -12,8 +12,8 @@ from typing import Any
 
 import requests
 from minecraft_launcher_lib.utils import get_version_list
-from PyQt5.QtCore import QSize, Qt
-from PyQt5.QtGui import QCloseEvent, QIcon, QPalette, QPixmap
+from PyQt5.QtCore import QSize, Qt, QRegExp
+from PyQt5.QtGui import QCloseEvent, QIcon, QPalette, QPixmap, QRegExpValidator
 from PyQt5.QtWidgets import QGraphicsBlurEffect
 from PyQt5.QtWidgets import (
     QApplication,
@@ -419,6 +419,13 @@ class MainWindow(QMainWindow):
         self.username = CustomLineEdit(self.game_tab)
         self.username.setPlaceholderText('Введите имя')
         self.username.setMinimumHeight(40)
+        # Разрешаем латиницу, цифры и популярные спецсимволы (без пробелов)
+        self.username.setValidator(
+            QRegExpValidator(
+                QRegExp('^[A-Za-z0-9()\[\]\{\}\._\-!@#$%^&+=~`,]*$'),
+                self,
+            )
+        )
         # Устанавливаем username из сохранённой сессии или последнего использованного
         if hasattr(self, 'ely_session') and self.ely_session:
             self.username.setText(self.ely_session['username'])
@@ -467,6 +474,11 @@ class MainWindow(QMainWindow):
         self.random_name_button.clicked.connect(self.set_random_username)
 
         self.username.set_button(self.random_name_button)
+
+        # Если активна сессия Ely.by — запрещаем изменение ника и отключаем рандом
+        if hasattr(self, 'ely_session') and self.ely_session:
+            self.username.setReadOnly(True)
+            self.random_name_button.setEnabled(False)
 
         form_layout.addLayout(top_row)
 
@@ -868,6 +880,11 @@ class MainWindow(QMainWindow):
         if logged_in:
             self.ely_login_button.setVisible(False)
             self.change_skin_button.setVisible(True)
+            # Блокируем изменение никнейма при активной сессии Ely.by
+            if hasattr(self, 'username') and self.username is not None:
+                self.username.setReadOnly(True)
+            if hasattr(self, 'random_name_button') and self.random_name_button is not None:
+                self.random_name_button.setEnabled(False)
             self.change_skin_button.setStyleSheet("""
                 QPushButton {
                     background-color: rgba(40, 167, 69, 0.9);
@@ -884,6 +901,11 @@ class MainWindow(QMainWindow):
         else:
             self.ely_login_button.setVisible(True)
             self.change_skin_button.setVisible(False)
+            # Разблокируем изменение никнейма при отсутствии сессии Ely.by
+            if hasattr(self, 'username') and self.username is not None:
+                self.username.setReadOnly(False)
+            if hasattr(self, 'random_name_button') and self.random_name_button is not None:
+                self.random_name_button.setEnabled(True)
 
     def handle_ely_login(self) -> None:
         """Обработчик кнопки входа/выхода"""
@@ -896,48 +918,158 @@ class MainWindow(QMainWindow):
             self.settings_tab.update_logout_button_visibility()
 
     def ely_login(self) -> None:
-        """Диалог ввода логина/пароля"""
-        email, ok = QInputDialog.getText(
-            self,
-            'Вход',
-            'Введите email Ely.by:',
-            QLineEdit.Normal,
-            '',
-        )
-        if not ok or not email:
-            return
+        """Окно авторизации Ely.by (единое поле ввода + регистрация)"""
+        dialog = QDialog(self)
+        dialog.setWindowTitle('Вход в Ely.by')
+        dialog.setFixedSize(380, 240)
 
-        password, ok = QInputDialog.getText(
-            self,
-            'Вход',
-            'Введите пароль:',
-            QLineEdit.Password,
-            '',
-        )
-        if not ok or not password:
-            return
+        layout = QVBoxLayout(dialog)
+        layout.setContentsMargins(20, 20, 20, 20)
+        layout.setSpacing(12)
 
-        try:
-            self.ely_session = ely.auth_password(email, password)
-            
-            # Сохраняем через старый механизм (для совместимости)
-            ely.write_login_data(
-                {
-                    'username': self.ely_session['username'],
-                    'uuid': self.ely_session['uuid'],
-                    'token': self.ely_session['token'],
-                    'logged_in': True,
-                }
-            )
-            
-            # Сохраняем через новый механизм (в settings.json)
-            save_ely_session(self.settings, self.ely_session)
-            
-            self.update_ely_ui(True)
-            self.username.setText(self.ely_session['username'])
-            QMessageBox.information(self, 'Успешно', 'Авторизация прошла успешно!')
-        except Exception as e:
-            QMessageBox.critical(self, 'Ошибка', str(e))
+        email_input = QLineEdit(dialog)
+        email_input.setPlaceholderText('Email Ely.by')
+        email_input.setMinimumHeight(38)
+        
+        # Пароль с переключателем видимости
+        password_row = QHBoxLayout()
+        password_row.setSpacing(8)
+        password_input = CustomLineEdit(dialog)
+        password_input.setPlaceholderText('Пароль')
+        password_input.setEchoMode(QLineEdit.Password)
+        password_input.setMinimumHeight(38)
+        # Добавим правый отступ под кнопку-глаз
+        password_input.setStyleSheet('QLineEdit { padding-right: 48px; }')
+
+        eye_button = QToolButton(password_input)
+        eye_button.setCursor(Qt.PointingHandCursor)
+        eye_button.setIcon(QIcon(resource_path('assets/hide.png')))
+        eye_button.setIconSize(QSize(22, 22))
+        eye_button.setFixedSize(40, 28)
+        eye_button.setStyleSheet('QToolButton { border: none; background: transparent; }')
+
+        def toggle_password_visibility():
+            if password_input.echoMode() == QLineEdit.Password:
+                password_input.setEchoMode(QLineEdit.Normal)
+                eye_button.setIcon(QIcon(resource_path('assets/show.png')))
+            else:
+                password_input.setEchoMode(QLineEdit.Password)
+                eye_button.setIcon(QIcon(resource_path('assets/hide.png')))
+
+        eye_button.clicked.connect(toggle_password_visibility)
+        password_input.set_button(eye_button)
+
+        layout.addWidget(email_input)
+        layout.addWidget(password_input)
+
+        # Лейбл ошибок под полями (тонкая строка текста)
+        error_label = QLabel('', dialog)
+        error_label.setWordWrap(True)
+        error_label.setStyleSheet('QLabel { color: #dc3545; padding: 4px 2px; background: transparent; }')
+        layout.addWidget(error_label)
+
+        buttons_row = QHBoxLayout()
+
+        register_btn = QPushButton('Нет аккаунта? Регистрация.', dialog)
+        register_btn.setCursor(Qt.PointingHandCursor)
+        register_btn.setFlat(True)
+        register_btn.setStyleSheet('QPushButton { color: #5aa0ff; text-align: left; }\nQPushButton:hover { text-decoration: underline; }')
+        register_btn.clicked.connect(lambda: webbrowser.open('https://account.ely.by/register'))
+        # Отключаем автоактивацию по Enter
+        register_btn.setAutoDefault(False)
+        register_btn.setDefault(False)
+
+        login_btn = QPushButton('Войти', dialog)
+        login_btn.setMinimumHeight(36)
+        # Делает кнопку входа дефолтной для Enter
+        login_btn.setAutoDefault(True)
+        login_btn.setDefault(True)
+
+        buttons_row.addWidget(register_btn)
+        buttons_row.addStretch()
+        buttons_row.addWidget(login_btn)
+
+        layout.addLayout(buttons_row)
+
+        def clear_field_styles():
+            email_input.setStyleSheet('')
+            password_input.setStyleSheet('')
+            error_label.setText('')
+
+        email_input.textChanged.connect(clear_field_styles)
+        password_input.textChanged.connect(clear_field_styles)
+
+        def set_error(widget: QLineEdit, text: str):
+            widget.setStyleSheet('QLineEdit { border: 1px solid #dc3545; }')
+            error_label.setText(text)
+
+        def map_error_message(err_text: str) -> tuple[str, str]:
+            """Возвращает ('email'|'password'|'generic', сообщение)"""
+            text_low = err_text.lower()
+
+            # Обобщённый ответ Ely.by — не указывает, что именно неверно
+            if 'invalid credentials' in text_low or 'invalid username or password' in text_low:
+                return ('generic', 'Неверный e-mail или пароль')
+            if 'user not found' in text_low or 'no such user' in text_low or 'unknownaccount' in text_low:
+                return ('email', 'Мы не нашли пользователя с таким e-mail!')
+            if 'bad credentials' in text_low or 'wrong password' in text_low:
+                return ('password', 'Введён неверный пароль!')
+
+            # По умолчанию — общее сообщение без указания поля
+            return ('generic', 'Не удалось выполнить вход. Проверьте данные.')
+
+        def perform_login():
+            email = email_input.text().strip()
+            password = password_input.text()
+            if not email or not password:
+                # Встроенная ошибка без QMessageBox
+                if not email:
+                    set_error(email_input, 'Введите email Ely.by')
+                elif not password:
+                    set_error(password_input, 'Введите пароль')
+                return
+            try:
+                # ЛОГИКА НЕ МЕНЯЛАСЬ: используем тот же вызов
+                self.ely_session = ely.auth_password(email, password)
+
+                # Сохранение (оба механизма)
+                ely.write_login_data(
+                    {
+                        'username': self.ely_session['username'],
+                        'uuid': self.ely_session['uuid'],
+                        'token': self.ely_session['token'],
+                        'logged_in': True,
+                    }
+                )
+                save_ely_session(self.settings, self.ely_session)
+
+                self.update_ely_ui(True)
+                self.username.setText(self.ely_session['username'])
+                dialog.accept()
+                QMessageBox.information(self, 'Успешно', 'Авторизация прошла успешно!')
+            except Exception as e:
+                # Парсим ответ и отображаем корректно
+                err_text = str(e)
+                try:
+                    err_json = json.loads(err_text)
+                    # Ely.by обычно возвращает {error, errorMessage}
+                    err_text = err_json.get('errorMessage') or err_text
+                except Exception:
+                    pass
+                field, msg = map_error_message(err_text)
+                if field == 'email':
+                    set_error(email_input, msg)
+                elif field == 'password':
+                    set_error(password_input, msg)
+                else:
+                    error_label.setText(msg)
+
+        login_btn.clicked.connect(perform_login)
+        # Enter работает из любого поля
+        password_input.returnPressed.connect(perform_login)
+        email_input.returnPressed.connect(perform_login)
+
+        dialog.exec_()
 
     def start_device_auth(self, dialog: QInputDialog) -> None:
         """Запуск авторизации через device code"""
@@ -1076,22 +1208,7 @@ class MainWindow(QMainWindow):
 
         layout = QVBoxLayout()
 
-        # Кнопка загрузки нового скина
-        upload_btn = QPushButton('Загрузить новый скин')
-        upload_btn.setStyleSheet("""
-            QPushButton {
-                background-color: #28a745;
-                color: white;
-                padding: 12px;
-                border-radius: 5px;
-                font-size: 14px;
-            }
-            QPushButton:hover {
-                background-color: #218838;
-            }
-        """)
-        upload_btn.clicked.connect(lambda: self.upload_new_skin(dialog))
-        layout.addWidget(upload_btn)
+        # (Удалено по требованию) Кнопка загрузки нового скина
 
         # Кнопка сброса скина
         reset_btn = QPushButton('Сбросить скин на стандартный')
