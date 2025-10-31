@@ -4,22 +4,22 @@ import logging
 import os
 import tempfile
 from dataclasses import dataclass
-from typing import Optional
 
 import requests
 
 from version import VERSION as CURRENT_VERSION
 
-
-GITHUB_API_LATEST = "https://api.github.com/repos/launcherdev11/16Launcher/releases/latest"
+GITHUB_API_LATEST = (
+    "https://api.github.com/repos/launcherdev11/16Launcher/releases/latest"
+)
 
 
 @dataclass
 class ReleaseInfo:
     latest_version: str
     has_update: bool
-    setup_url: Optional[str]
-    sha256_url: Optional[str]
+    setup_url: str | None
+    sha256_url: str | None
 
 
 def normalize_version(v: str) -> tuple[int, int, int]:
@@ -39,13 +39,17 @@ def get_latest_release_info() -> ReleaseInfo | None:
         resp = requests.get(GITHUB_API_LATEST, timeout=10)
         resp.raise_for_status()
         data = resp.json()
-        latest_version = (data.get("tag_name") or data.get("name") or "").strip()
+        latest_version = (
+            data.get("tag_name") or data.get("name") or ""
+        ).strip()
         if not latest_version:
-            logging.warning("[UPDATER] Не удалось получить версию из latest release")
+            logging.warning(
+                "[UPDATER] Не удалось получить версию из latest release",
+            )
             return None
 
-        setup_url: Optional[str] = None
-        sha256_url: Optional[str] = None
+        setup_url: str | None = None
+        sha256_url: str | None = None
         for asset in data.get("assets", []) or []:
             name = asset.get("name", "")
             url = asset.get("browser_download_url")
@@ -64,7 +68,9 @@ def get_latest_release_info() -> ReleaseInfo | None:
             sha256_url=sha256_url,
         )
     except Exception as e:
-        logging.exception(f"[UPDATER] Ошибка получения информации о релизе: {e}")
+        logging.exception(
+            f"[UPDATER] Ошибка получения информации о релизе: {e}",
+        )
         return None
 
 
@@ -90,7 +96,9 @@ def compute_sha256(path: str) -> str:
     return h.hexdigest()
 
 
-def extract_expected_hash(sha256_text: str, target_filename: str) -> Optional[str]:
+def extract_expected_hash(
+    sha256_text: str, target_filename: str,
+) -> str | None:
     # Поддержка форматов: "<hash>  <filename>" или JSON {"filename":"hash"}
     try:
         obj = json.loads(sha256_text)
@@ -111,9 +119,13 @@ def extract_expected_hash(sha256_text: str, target_filename: str) -> Optional[st
     return None
 
 
-def download_installer_with_verify(setup_url: str, sha256_url: Optional[str]) -> Optional[str]:
+def download_installer_with_verify(
+    setup_url: str, sha256_url: str | None,
+) -> str | None:
     try:
-        fd, temp_path = tempfile.mkstemp(prefix="16launcher_setup_", suffix=".exe")
+        fd, temp_path = tempfile.mkstemp(
+            prefix="16launcher_setup_", suffix=".exe",
+        )
         os.close(fd)
         if not download_file(setup_url, temp_path):
             return None
@@ -121,7 +133,9 @@ def download_installer_with_verify(setup_url: str, sha256_url: Optional[str]) ->
         if sha256_url:
             resp = requests.get(sha256_url, timeout=15)
             resp.raise_for_status()
-            expected = extract_expected_hash(resp.text, os.path.basename(setup_url))
+            expected = extract_expected_hash(
+                resp.text, os.path.basename(setup_url),
+            )
             if expected:
                 actual = compute_sha256(temp_path)
                 if expected.lower() != actual.lower():
@@ -133,7 +147,7 @@ def download_installer_with_verify(setup_url: str, sha256_url: Optional[str]) ->
                     return None
         return temp_path
     except Exception as e:
-        logging.exception(f"[UPDATER] Ошибка загрузки/проверки установщика: {e}")
+        logging.exception(
+            f"[UPDATER] Ошибка загрузки/проверки установщика: {e}",
+        )
         return None
-
-

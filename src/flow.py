@@ -1,13 +1,11 @@
-from multiprocessing.context import Process
-
-
-from typing import Any, Callable, Coroutine
-
-
 import asyncio
 import logging
 import multiprocessing
-from threading import Lock as TLock, Thread
+from collections.abc import Callable, Coroutine
+from multiprocessing.context import Process
+from threading import Lock as TLock
+from threading import Thread
+from typing import Any
 
 
 def dedicated(f: Callable[..., Any]) -> Thread:
@@ -20,7 +18,9 @@ def dedicated(f: Callable[..., Any]) -> Thread:
     return wrapper
 
 
-def dedicate(func: Callable[..., Any], *args: tuple[Any, ...], **kwargs: dict[str, Any]) -> Thread:
+def dedicate(
+    func: Callable[..., Any], *args: tuple[Any, ...], **kwargs: dict[str, Any],
+) -> Thread:
     t = Thread(target=func, args=args, kwargs=kwargs)
     t.daemon = True
     t.start()
@@ -62,11 +62,11 @@ __logged_level = 0
 def logged(func: Callable[..., Any]) -> Callable[..., Any]:
     def wrapper(*args: tuple[Any, ...], **kwargs: dict[str, Any]) -> Any:
         global __logged_level
-        logging.debug(' ' * 4 * __logged_level + f'Running {func.__name__}')
+        logging.debug(" " * 4 * __logged_level + f"Running {func.__name__}")
         __logged_level += 1
         r = func(*args, **kwargs)
         __logged_level -= 1
-        logging.debug(' ' * 4 * __logged_level + f'Finished {func.__name__}')
+        logging.debug(" " * 4 * __logged_level + f"Finished {func.__name__}")
         return r
 
     return wrapper

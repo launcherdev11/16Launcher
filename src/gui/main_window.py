@@ -5,16 +5,13 @@ import platform
 import random
 import shutil
 import subprocess
-import sys
 import traceback
 import webbrowser
-from typing import Any
 
 import requests
 from minecraft_launcher_lib.utils import get_version_list
-from PyQt5.QtCore import QSize, Qt, QRegExp
-from PyQt5.QtGui import QCloseEvent, QIcon, QPalette, QPixmap, QRegExpValidator
-from PyQt5.QtWidgets import QGraphicsBlurEffect
+from PyQt5.QtCore import QRegExp, QSize, Qt
+from PyQt5.QtGui import QCloseEvent, QIcon, QRegExpValidator
 from PyQt5.QtWidgets import (
     QApplication,
     QComboBox,
@@ -37,84 +34,84 @@ from PyQt5.QtWidgets import (
 )
 
 import constants
-
 import ely
 from config import AUTHLIB_JAR_PATH, MINECRAFT_DIR, SKINS_DIR
+from discord_rpc import get_discord_rpc, init_discord_rpc, shutdown_discord_rpc
 from ely_by_skin_manager import ElyBySkinManager
 from ely_skin_manager import ElySkinManager
-from discord_rpc import get_discord_rpc, init_discord_rpc, shutdown_discord_rpc
 from translator import Translator
-from version import VERSION
-from updater import get_latest_release_info, download_installer_with_verify
+from updater import download_installer_with_verify, get_latest_release_info
 from util import (
+    clear_ely_session,
     download_authlib_injector,
     generate_random_username,
+    load_ely_session,
     load_settings,
     resource_path,
-    save_settings,
     save_ely_session,
-    load_ely_session,
-    clear_ely_session,
+    save_settings,
 )
+from version import VERSION
+
 from .custom_line_edit import CustomLineEdit
 from .threads.launch_thread import LaunchThread
+from .widgets.console_widget import ConsoleWidget
 from .widgets.mod_loader_tab import ModLoaderTab
 from .widgets.modpack_tab import ModpackTab
 from .widgets.mods_tab import ModsTab
 from .widgets.settings_tab import SettingsTab
 from .widgets.splash_screen import SplashScreen
-from .widgets.console_widget import ConsoleWidget
 
 
 def open_root_folder() -> None:
     folder = MINECRAFT_DIR
 
-    if platform.system() == 'Windows':
+    if platform.system() == "Windows":
         subprocess.Popen(f'explorer "{folder}"')
-    elif platform.system() == 'Darwin':
-        subprocess.Popen(['open', folder])
+    elif platform.system() == "Darwin":
+        subprocess.Popen(["open", folder])
     else:
-        subprocess.Popen(['xdg-open', folder])
+        subprocess.Popen(["xdg-open", folder])
 
 
 def get_ely_skin(username: str) -> str | None:
     """Получает URL скина пользователя с Ely.by"""
     try:
         response = requests.get(
-            f'https://skinsystem.ely.by/skins/{username}.png',
+            f"https://skinsystem.ely.by/skins/{username}.png",
             allow_redirects=False,
         )
         if response.status_code == 200:
-            return f'https://skinsystem.ely.by/skins/{username}.png'
+            return f"https://skinsystem.ely.by/skins/{username}.png"
         return None
     except Exception as e:
-        logging.exception(f'Ошибка при получении скина: {e}')
+        logging.exception(f"Ошибка при получении скина: {e}")
         return None
 
 
 class MainWindow(QMainWindow):
     __slots__ = (
-        'console_widget',
-        'ely_login_button',
-        'ely_session',
-        'fabric_tab',
-        'forge_tab',
-        'motd_label',
-        'open_folder_button',
-        'optifine_tab',
-        'play_button',
-        'quilt_tab',
-        'random_name_button',
-        'settings_button',
-        'sidebar',
-        'sidebar_container',
-        'sidebar_layout',
-        'splash',
-        'start_progress_label',
-        'support_button',
-        'telegram_button',
-        'toggle_sidebar_button',
-        'username',
+        "console_widget",
+        "ely_login_button",
+        "ely_session",
+        "fabric_tab",
+        "forge_tab",
+        "motd_label",
+        "open_folder_button",
+        "optifine_tab",
+        "play_button",
+        "quilt_tab",
+        "random_name_button",
+        "settings_button",
+        "sidebar",
+        "sidebar_container",
+        "sidebar_layout",
+        "splash",
+        "start_progress_label",
+        "support_button",
+        "telegram_button",
+        "toggle_sidebar_button",
+        "username",
     )
 
     def __init__(self) -> None:
@@ -127,9 +124,11 @@ class MainWindow(QMainWindow):
         # Загружаем сохранённую сессию Ely.by
         self.ely_session = load_ely_session(self.settings)
         if self.ely_session:
-            logging.info(f'✅ Автоматический вход в Ely.by: {self.ely_session.get("username")}')
+            logging.info(
+                f'✅ Автоматический вход в Ely.by: {self.ely_session.get("username")}',
+            )
         else:
-            logging.info('ℹ️ Нет сохранённой сессии Ely.by')
+            logging.info("ℹ️ Нет сохранённой сессии Ely.by")
 
         self.random_name_button = None
         self.ely_login_button = None
@@ -152,59 +151,59 @@ class MainWindow(QMainWindow):
         self.sidebar_container = None
         self.splash = SplashScreen()
         self.splash.show()
-        logging.debug('Инициализация основного окна')
-        self.splash.update_progress(1, 'Инициализация основного окна...')
+        logging.debug("Инициализация основного окна")
+        self.splash.update_progress(1, "Инициализация основного окна...")
         super().__init__()
 
-        self.splash.update_progress(2, 'Установка заголовка окна...')
-        self.setWindowTitle(f'16Launcher {VERSION}')
+        self.splash.update_progress(2, "Установка заголовка окна...")
+        self.setWindowTitle(f"16Launcher {VERSION}")
 
-        self.splash.update_progress(3, 'Установка размера окна...')
+        self.splash.update_progress(3, "Установка размера окна...")
         self.setFixedSize(1280, 720)
 
-        self.splash.update_progress(4, 'Установка размера окна...')
-        self.setWindowIcon(QIcon(resource_path('assets/icon.ico')))
+        self.splash.update_progress(4, "Установка размера окна...")
+        self.setWindowIcon(QIcon(resource_path("assets/icon.ico")))
 
-        logging.debug('Инициализация транслятора')
-        self.splash.update_progress(5, 'Инициализация транслятора...')
+        logging.debug("Инициализация транслятора")
+        self.splash.update_progress(5, "Инициализация транслятора...")
         self.translator = Translator()
 
-        logging.debug('Загружаем настройки')
-        self.splash.update_progress(6, 'Загружаем настройки')
+        logging.debug("Загружаем настройки")
+        self.splash.update_progress(6, "Загружаем настройки")
         self.settings = load_settings()
 
-        self.splash.update_progress(7, 'Устанавливаем никнейм')
-        self.last_username = self.settings.get('last_username', '')
+        self.splash.update_progress(7, "Устанавливаем никнейм")
+        self.last_username = self.settings.get("last_username", "")
 
-        self.splash.update_progress(8, 'Загружаем сессию через ely')
+        self.splash.update_progress(8, "Загружаем сессию через ely")
         self.setup_ely_auth()
 
-        self.splash.update_progress(20, 'Постанавливаем избранные версии')
-        self.favorites = self.settings.get('favorites', [])
+        self.splash.update_progress(20, "Постанавливаем избранные версии")
+        self.favorites = self.settings.get("favorites", [])
 
-        self.splash.update_progress(21, 'Получаем последний версию')
-        self.last_version = self.settings.get('last_version', '')
+        self.splash.update_progress(21, "Получаем последний версию")
+        self.last_version = self.settings.get("last_version", "")
 
-        self.splash.update_progress(22, 'Получаем последний загрузчик')
-        self.last_loader = self.settings.get('last_loader', 'vanilla')
+        self.splash.update_progress(22, "Получаем последний загрузчик")
+        self.last_loader = self.settings.get("last_loader", "vanilla")
 
-        logging.debug('Создаем UI элементы')
-        self.splash.update_progress(23, 'Создаем UI элементы')
+        logging.debug("Создаем UI элементы")
+        self.splash.update_progress(23, "Создаем UI элементы")
         self.launch_thread = LaunchThread(self)
         self.launch_thread.state_update_signal.connect(self.state_update)
         self.launch_thread.progress_update_signal.connect(self.update_progress)
         self.launch_thread.close_launcher_signal.connect(self.close_launcher)
         self.launch_thread.log_signal.connect(self.on_launch_log)
 
-        logging.debug('Создаём основной контейнер')
-        self.splash.update_progress(25, 'Создаём основной экран')
+        logging.debug("Создаём основной контейнер")
+        self.splash.update_progress(25, "Создаём основной экран")
         self.main_container = QWidget(self)
         self.setCentralWidget(self.main_container)
         self.main_layout = QHBoxLayout(self.main_container)
         self.main_container.setLayout(self.main_layout)
 
-        logging.debug('Создаём боковую панель')
-        self.splash.update_progress(26, 'Создаём боковую панель')
+        logging.debug("Создаём боковую панель")
+        self.splash.update_progress(26, "Создаём боковую панель")
         self.setup_sidebar()
         self.stacked_widget = QStackedWidget()
         self.main_layout.addWidget(self.stacked_widget)
@@ -212,58 +211,60 @@ class MainWindow(QMainWindow):
         self.tab_layout = QVBoxLayout(self.tab_widget)
         self.tab_layout.setContentsMargins(15, 15, 15, 15)
 
-        logging.debug('Создаём Game TAB')
-        self.splash.update_progress(37, 'Создаём Game TAB')
+        logging.debug("Создаём Game TAB")
+        self.splash.update_progress(37, "Создаём Game TAB")
         self.game_tab = QWidget()
         self.setup_game_tab()
 
-        logging.debug('Создаём Mods TAB')
-        self.splash.update_progress(38, 'Создаём Mods TAB')
+        logging.debug("Создаём Mods TAB")
+        self.splash.update_progress(38, "Создаём Mods TAB")
         self.mods_tab = ModsTab(self)
 
-        logging.debug('Создаём Modpacks TAB')
-        self.splash.update_progress(39, 'Создаём Modpacks TAB')
+        logging.debug("Создаём Modpacks TAB")
+        self.splash.update_progress(39, "Создаём Modpacks TAB")
         self.modpacks_tab = ModpackTab(self)
 
-        logging.debug('Создаём меню вкладок')
-        self.splash.update_progress(40, 'Создаём меню вкладок')
+        logging.debug("Создаём меню вкладок")
+        self.splash.update_progress(40, "Создаём меню вкладок")
         self.tabs = QTabWidget()
 
-        self.splash.update_progress(41, 'Добавляем вкладку `Запуск игры`')
-        self.tabs.addTab(self.game_tab, 'Запуск игры')
-        self.splash.update_progress(42, 'Добавляем вкладку `Моды`')
-        self.tabs.addTab(self.mods_tab, 'Моды')
-        self.splash.update_progress(43, 'Добавляем вкладку `Мои сборки`')
-        self.tabs.addTab(self.modpacks_tab, 'Мои сборки')
-        self.splash.update_progress(44, 'Добавляем вкладку `Мои сборки`')
-        self.splash.update_progress(45, 'Добавляем меню вкладок на основную панель`')
+        self.splash.update_progress(41, "Добавляем вкладку `Запуск игры`")
+        self.tabs.addTab(self.game_tab, "Запуск игры")
+        self.splash.update_progress(42, "Добавляем вкладку `Моды`")
+        self.tabs.addTab(self.mods_tab, "Моды")
+        self.splash.update_progress(43, "Добавляем вкладку `Мои сборки`")
+        self.tabs.addTab(self.modpacks_tab, "Мои сборки")
+        self.splash.update_progress(44, "Добавляем вкладку `Мои сборки`")
+        self.splash.update_progress(
+            45, "Добавляем меню вкладок на основную панель`",
+        )
         self.tab_layout.addWidget(self.tabs)
 
-        logging.debug('Инициализируем вкладку загрузки')
-        self.splash.update_progress(46, 'Инициализируем вкладку загрузки')
+        logging.debug("Инициализируем вкладку загрузки")
+        self.splash.update_progress(46, "Инициализируем вкладку загрузки")
         self.setup_modloader_tabs()
 
         self.stacked_widget.addWidget(self.tab_widget)
-        logging.debug('Инициализируем вкладку настроек')
-        self.splash.update_progress(52, 'Инициализируем вкладку настроек')
+        logging.debug("Инициализируем вкладку настроек")
+        self.splash.update_progress(52, "Инициализируем вкладку настроек")
         self.settings_tab = SettingsTab(self.translator, self)
         self.stacked_widget.addWidget(self.settings_tab)
         self.stacked_widget.setCurrentIndex(0)
         self.tabs.currentChanged.connect(self.handle_tab_changed)
 
-        logging.debug('Инициализируем тёмную тему')
-        self.splash.update_progress(53, 'Инициализируем тёмную тему')
+        logging.debug("Инициализируем тёмную тему")
+        self.splash.update_progress(53, "Инициализируем тёмную тему")
         self.apply_dark_theme()
 
-        self.splash.update_progress(54, 'Загрузка завершена')
+        self.splash.update_progress(54, "Загрузка завершена")
         self.splash.close()
-        logging.debug('Инициализация завершена')
+        logging.debug("Инициализация завершена")
         del self.splash
-        
+
         # Инициализируем Discord Rich Presence
-        logging.info('Инициализация Discord Rich Presence...')
+        logging.info("Инициализация Discord Rich Presence...")
         init_discord_rpc()
-        
+
         # Устанавливаем начальный статус
         discord_rpc = get_discord_rpc()
         if discord_rpc.is_connected:
@@ -271,10 +272,14 @@ class MainWindow(QMainWindow):
 
         # Проверка обновлений при старте
         try:
-            if self.settings.get('check_updates_on_start', True):
-                self.check_for_updates(auto=self.settings.get('auto_update', False))
+            if self.settings.get("check_updates_on_start", True):
+                self.check_for_updates(
+                    auto=self.settings.get("auto_update", False),
+                )
         except Exception as e:
-            logging.exception(f'[UPDATER] Ошибка проверки обновлений при старте: {e}')
+            logging.exception(
+                f"[UPDATER] Ошибка проверки обновлений при старте: {e}",
+            )
 
     def check_for_updates(self, auto: bool = False) -> None:
         info = get_latest_release_info()
@@ -288,8 +293,8 @@ class MainWindow(QMainWindow):
 
         reply = QMessageBox.question(
             self,
-            'Обновление доступно',
-            f'Доступна новая версия {latest}. Установить сейчас?',
+            "Обновление доступно",
+            f"Доступна новая версия {latest}. Установить сейчас?",
             QMessageBox.Yes | QMessageBox.No,
             QMessageBox.Yes,
         )
@@ -298,14 +303,18 @@ class MainWindow(QMainWindow):
 
     def perform_update(self, info) -> None:
         try:
-            self.start_progress_label.setText('Скачивание обновления...')
+            self.start_progress_label.setText("Скачивание обновления...")
             self.start_progress_label.setVisible(True)
             self.start_progress.setVisible(True)
             QApplication.processEvents()
 
-            installer_path = download_installer_with_verify(info.setup_url, info.sha256_url)
+            installer_path = download_installer_with_verify(
+                info.setup_url, info.sha256_url,
+            )
             if not installer_path:
-                QMessageBox.critical(self, 'Ошибка', 'Не удалось скачать обновление.')
+                QMessageBox.critical(
+                    self, "Ошибка", "Не удалось скачать обновление.",
+                )
                 self.start_progress_label.setVisible(False)
                 self.start_progress.setVisible(False)
                 return
@@ -313,17 +322,23 @@ class MainWindow(QMainWindow):
             # Запуск Inno Setup установщика в тихом режиме
             args = [
                 installer_path,
-                '/VERYSILENT',
-                '/SUPPRESSMSGBOXES',
-                '/NORESTART',
-                '/CLOSEAPPLICATIONS',
-                '/RESTARTAPPLICATIONS',
+                "/VERYSILENT",
+                "/SUPPRESSMSGBOXES",
+                "/NORESTART",
+                "/CLOSEAPPLICATIONS",
+                "/RESTARTAPPLICATIONS",
             ]
             try:
                 subprocess.Popen(args)
             except Exception as e:
-                logging.exception(f'[UPDATER] Не удалось запустить установщик: {e}')
-                QMessageBox.critical(self, 'Ошибка', 'Не удалось запустить установщик обновления.')
+                logging.exception(
+                    f"[UPDATER] Не удалось запустить установщик: {e}",
+                )
+                QMessageBox.critical(
+                    self,
+                    "Ошибка",
+                    "Не удалось запустить установщик обновления.",
+                )
                 return
 
             # Закрываем лаунчер, установщик перезапустит приложение при необходимости
@@ -333,42 +348,41 @@ class MainWindow(QMainWindow):
             self.start_progress_label.setVisible(False)
             self.start_progress.setVisible(False)
 
-
     def setup_modloader_tabs(self) -> None:
         # Существующие вкладки
-        logging.debug('Создаём вкладку Forge')
-        self.splash.update_progress(47, 'Создаём вкладку Forge')
-        self.forge_tab = ModLoaderTab('forge')
+        logging.debug("Создаём вкладку Forge")
+        self.splash.update_progress(47, "Создаём вкладку Forge")
+        self.forge_tab = ModLoaderTab("forge")
 
-        logging.debug('Создаём вкладку Fabric')
-        self.splash.update_progress(48, 'Создаём вкладку Fabric')
-        self.fabric_tab = ModLoaderTab('fabric')
+        logging.debug("Создаём вкладку Fabric")
+        self.splash.update_progress(48, "Создаём вкладку Fabric")
+        self.fabric_tab = ModLoaderTab("fabric")
 
-        logging.debug('Создаём вкладку OptiFine')
-        self.splash.update_progress(49, 'Создаём вкладку OptiFine')
-        self.optifine_tab = ModLoaderTab('optifine')
+        logging.debug("Создаём вкладку OptiFine")
+        self.splash.update_progress(49, "Создаём вкладку OptiFine")
+        self.optifine_tab = ModLoaderTab("optifine")
 
-        logging.debug('Создаём вкладку Quilt')
-        self.splash.update_progress(50, 'Создаём вкладку Quilt')
-        self.quilt_tab = ModLoaderTab('quilt')
+        logging.debug("Создаём вкладку Quilt")
+        self.splash.update_progress(50, "Создаём вкладку Quilt")
+        self.quilt_tab = ModLoaderTab("quilt")
 
-        self.splash.update_progress(51, 'Добавляем вкладку на основную панель')
-        self.tabs.addTab(self.quilt_tab, 'Quilt')
-        self.tabs.addTab(self.forge_tab, 'Forge')
-        self.tabs.addTab(self.fabric_tab, 'Fabric')
-        self.tabs.addTab(self.optifine_tab, 'OptiFine')
+        self.splash.update_progress(51, "Добавляем вкладку на основную панель")
+        self.tabs.addTab(self.quilt_tab, "Quilt")
+        self.tabs.addTab(self.forge_tab, "Forge")
+        self.tabs.addTab(self.fabric_tab, "Fabric")
+        self.tabs.addTab(self.optifine_tab, "OptiFine")
 
     def setup_sidebar(self) -> None:
         """Создаёт боковую панель с возможностью сворачивания"""
-        logging.debug('Создаём обёртку для панели и кнопки')
-        self.splash.update_progress(27, 'Создаём панели и кнопки')
+        logging.debug("Создаём обёртку для панели и кнопки")
+        self.splash.update_progress(27, "Создаём панели и кнопки")
         self.sidebar_container = QWidget()
         self.sidebar_layout = QHBoxLayout(self.sidebar_container)
         self.sidebar_layout.setContentsMargins(0, 0, 0, 0)
         self.sidebar_layout.setSpacing(0)
 
-        logging.debug('Создаём боковую панель')
-        self.splash.update_progress(28, 'Создаём боковую панель')
+        logging.debug("Создаём боковую панель")
+        self.splash.update_progress(28, "Создаём боковую панель")
         self.sidebar = QFrame()
         self.sidebar.setFrameShape(QFrame.StyledPanel)
         self.sidebar.setFixedWidth(100)
@@ -376,10 +390,10 @@ class MainWindow(QMainWindow):
         sidebar_content_layout.setContentsMargins(10, 10, 10, 10)
         sidebar_content_layout.setSpacing(20)
 
-        logging.debug('Создаём кнопку играть')
-        self.splash.update_progress(29, 'Создаём кнопку играть')
+        logging.debug("Создаём кнопку играть")
+        self.splash.update_progress(29, "Создаём кнопку играть")
         self.play_button = QPushButton()
-        self.play_button.setIcon(QIcon(resource_path('assets/play64.png')))
+        self.play_button.setIcon(QIcon(resource_path("assets/play64.png")))
         self.play_button.setIconSize(QSize(64, 64))
         self.play_button.setFixedSize(75, 75)
         self.play_button.setStyleSheet("""
@@ -396,48 +410,60 @@ class MainWindow(QMainWindow):
                }
            """)
         self.play_button.clicked.connect(self.show_game_tab)
-        sidebar_content_layout.addWidget(self.play_button, alignment=Qt.AlignCenter)
+        sidebar_content_layout.addWidget(
+            self.play_button, alignment=Qt.AlignCenter,
+        )
 
-        logging.debug('Создаём кнопку настроек')
-        self.splash.update_progress(30, 'Создаём кнопку настроек')
+        logging.debug("Создаём кнопку настроек")
+        self.splash.update_progress(30, "Создаём кнопку настроек")
         self.settings_button = QPushButton()
-        self.settings_button.setIcon(QIcon(resource_path('assets/set64.png')))
+        self.settings_button.setIcon(QIcon(resource_path("assets/set64.png")))
         self.settings_button.setIconSize(QSize(64, 64))
         self.settings_button.setFixedSize(75, 75)
         self.settings_button.setStyleSheet(self.play_button.styleSheet())
         self.settings_button.clicked.connect(self.show_settings_tab)
-        sidebar_content_layout.addWidget(self.settings_button, alignment=Qt.AlignCenter)
+        sidebar_content_layout.addWidget(
+            self.settings_button, alignment=Qt.AlignCenter,
+        )
 
         sidebar_content_layout.addStretch()
 
-        logging.debug('Создаём кнопку телеграмма')
-        self.splash.update_progress(32, 'Создаём кнопку телеграмма')
+        logging.debug("Создаём кнопку телеграмма")
+        self.splash.update_progress(32, "Создаём кнопку телеграмма")
         self.telegram_button = QPushButton()
-        self.telegram_button.setIcon(QIcon(resource_path('assets/tg.png')))
+        self.telegram_button.setIcon(QIcon(resource_path("assets/tg.png")))
         self.telegram_button.setIconSize(QSize(64, 64))
         self.telegram_button.setFixedSize(75, 75)
         self.telegram_button.setStyleSheet(self.play_button.styleSheet())
         self.telegram_button.clicked.connect(
-            lambda: webbrowser.open('https://t.me/of16launcher'),
+            lambda: webbrowser.open("https://t.me/of16launcher"),
         )
-        sidebar_content_layout.addWidget(self.telegram_button, alignment=Qt.AlignCenter)
+        sidebar_content_layout.addWidget(
+            self.telegram_button, alignment=Qt.AlignCenter,
+        )
 
-        logging.debug('Создаём кнопку доната')
-        self.splash.update_progress(33, 'Создаём кнопку доната')
+        logging.debug("Создаём кнопку доната")
+        self.splash.update_progress(33, "Создаём кнопку доната")
         self.support_button = QPushButton()
-        self.support_button.setIcon(QIcon(resource_path('assets/support64.png')))
+        self.support_button.setIcon(
+            QIcon(resource_path("assets/support64.png")),
+        )
         self.support_button.setIconSize(QSize(64, 64))
         self.support_button.setFixedSize(75, 75)
         self.support_button.setStyleSheet(self.play_button.styleSheet())
         self.support_button.clicked.connect(
-            lambda: webbrowser.open('https://www.donationalerts.com/r/16steyy'),
+            lambda: webbrowser.open("https://www.donationalerts.com/r/16steyy"),
         )
-        sidebar_content_layout.addWidget(self.support_button, alignment=Qt.AlignCenter)
+        sidebar_content_layout.addWidget(
+            self.support_button, alignment=Qt.AlignCenter,
+        )
 
-        logging.debug('Создаём Кнопку-свёртку')
-        self.splash.update_progress(34, 'Создаём кнопку-свёртку')
+        logging.debug("Создаём Кнопку-свёртку")
+        self.splash.update_progress(34, "Создаём кнопку-свёртку")
         self.toggle_sidebar_button = QPushButton()
-        self.toggle_sidebar_button.setIcon(QIcon(resource_path('assets/toggle.png')))
+        self.toggle_sidebar_button.setIcon(
+            QIcon(resource_path("assets/toggle.png")),
+        )
         self.toggle_sidebar_button.setIconSize(QSize(24, 24))
         self.toggle_sidebar_button.setFixedSize(30, 30)
         self.toggle_sidebar_button.setStyleSheet("""
@@ -455,8 +481,8 @@ class MainWindow(QMainWindow):
            """)
         self.toggle_sidebar_button.clicked.connect(self.toggle_sidebar)
 
-        logging.debug('Добавляем в основной контейнер')
-        self.splash.update_progress(35, 'Добавляем в основной контейнер')
+        logging.debug("Добавляем в основной контейнер")
+        self.splash.update_progress(35, "Добавляем в основной контейнер")
         self.sidebar_layout.addWidget(self.sidebar)
         self.sidebar_layout.addWidget(self.toggle_sidebar_button)
 
@@ -471,7 +497,7 @@ class MainWindow(QMainWindow):
                 backdrop-filter: blur(20px);
             }
         """)
-        
+
         layout = QVBoxLayout(self.game_tab)
         layout.setContentsMargins(30, 30, 30, 30)
         layout.setSpacing(20)
@@ -483,18 +509,18 @@ class MainWindow(QMainWindow):
         top_row.setSpacing(10)
 
         self.username = CustomLineEdit(self.game_tab)
-        self.username.setPlaceholderText('Введите имя')
+        self.username.setPlaceholderText("Введите имя")
         self.username.setMinimumHeight(40)
         # Разрешаем латиницу, цифры и популярные спецсимволы (без пробелов)
         self.username.setValidator(
             QRegExpValidator(
-                QRegExp('^[A-Za-z0-9()\[\]\{\}\._\-!@#$%^&+=~`,]*$'),
+                QRegExp(r"^[A-Za-z0-9()\[\]\{\}\._\-!@#$%^&+=~`,]*$"),
                 self,
-            )
+            ),
         )
         # Устанавливаем username из сохранённой сессии или последнего использованного
-        if hasattr(self, 'ely_session') and self.ely_session:
-            self.username.setText(self.ely_session['username'])
+        if hasattr(self, "ely_session") and self.ely_session:
+            self.username.setText(self.ely_session["username"])
         else:
             self.username.setText(self.last_username)
 
@@ -517,7 +543,7 @@ class MainWindow(QMainWindow):
 
         self.random_name_button = QToolButton(self.username)
         self.random_name_button.setIcon(
-            QIcon(resource_path('assets/random.png')),
+            QIcon(resource_path("assets/random.png")),
         )  # Путь к вашей иконке
         self.random_name_button.setIconSize(QSize(45, 45))
         self.random_name_button.setCursor(Qt.PointingHandCursor)
@@ -542,7 +568,7 @@ class MainWindow(QMainWindow):
         self.username.set_button(self.random_name_button)
 
         # Если активна сессия Ely.by — запрещаем изменение ника и отключаем рандом
-        if hasattr(self, 'ely_session') and self.ely_session:
+        if hasattr(self, "ely_session") and self.ely_session:
             self.username.setReadOnly(True)
             self.random_name_button.setEnabled(False)
 
@@ -557,9 +583,11 @@ class MainWindow(QMainWindow):
         self.version_type_select = QComboBox(self.game_tab)
         self.version_type_select.setMinimumHeight(45)
         self.version_type_select.setFixedWidth(250)
-        self.version_type_select.addItem('Все версии')
-        self.version_type_select.addItem('Избранные')
-        self.version_type_select.currentTextChanged.connect(self.update_version_list)
+        self.version_type_select.addItem("Все версии")
+        self.version_type_select.addItem("Избранные")
+        self.version_type_select.currentTextChanged.connect(
+            self.update_version_list,
+        )
         self.version_type_select.setStyleSheet("""
             QComboBox {
                 background-color: rgba(68, 68, 68, 0.8);
@@ -586,11 +614,11 @@ class MainWindow(QMainWindow):
         self.loader_select = QComboBox(self.game_tab)
         self.loader_select.setMinimumHeight(45)
         self.loader_select.setFixedWidth(250)
-        self.loader_select.addItem('Vanilla', 'vanilla')
-        self.loader_select.addItem('Forge', 'forge')
-        self.loader_select.addItem('Fabric', 'fabric')
-        self.loader_select.addItem('OptiFine', 'optifine')
-        self.loader_select.addItem('Quilt', 'quilt')
+        self.loader_select.addItem("Vanilla", "vanilla")
+        self.loader_select.addItem("Forge", "forge")
+        self.loader_select.addItem("Fabric", "fabric")
+        self.loader_select.addItem("OptiFine", "optifine")
+        self.loader_select.addItem("Quilt", "quilt")
         self.loader_select.setStyleSheet(self.version_type_select.styleSheet())
         loader_index = self.loader_select.findData(self.last_loader)
         if loader_index >= 0:
@@ -606,7 +634,7 @@ class MainWindow(QMainWindow):
         version_row.addWidget(self.version_select)
 
         # 4. Кнопка избранного
-        self.favorite_button = QPushButton('★')
+        self.favorite_button = QPushButton("★")
         self.favorite_button.setFixedSize(45, 45)
         self.favorite_button.setCheckable(True)
         self.favorite_button.setStyleSheet("""
@@ -635,7 +663,7 @@ class MainWindow(QMainWindow):
         bottom_row = QHBoxLayout()
         bottom_row.setSpacing(10)
 
-        self.change_skin_button = QPushButton('Сменить скин (Ely.by)')
+        self.change_skin_button = QPushButton("Сменить скин (Ely.by)")
         self.change_skin_button.setMinimumHeight(50)
         self.change_skin_button.setStyleSheet("""
             QPushButton {
@@ -655,7 +683,7 @@ class MainWindow(QMainWindow):
         self.change_skin_button.clicked.connect(self.change_ely_skin)
         self.change_skin_button.setVisible(False)
 
-        self.start_button = QPushButton('ИГРАТЬ')
+        self.start_button = QPushButton("ИГРАТЬ")
         self.start_button.setMinimumHeight(50)
         self.start_button.setStyleSheet("""
             QPushButton {
@@ -679,7 +707,7 @@ class MainWindow(QMainWindow):
         self.start_button.clicked.connect(self.launch_game)
         bottom_row.addWidget(self.start_button)
 
-        self.ely_login_button = QPushButton('Войти с Ely.by')
+        self.ely_login_button = QPushButton("Войти с Ely.by")
         self.ely_login_button.setMinimumHeight(50)
         self.ely_login_button.setStyleSheet("""
             QPushButton {
@@ -703,8 +731,10 @@ class MainWindow(QMainWindow):
 
         # Кнопка "Открыть папку"
         self.open_folder_button = QPushButton()
-        self.open_folder_button.setIcon(QIcon(resource_path('assets/folder.png')))
-        self.open_folder_button.setToolTip('Открыть папку с игрой')
+        self.open_folder_button.setIcon(
+            QIcon(resource_path("assets/folder.png")),
+        )
+        self.open_folder_button.setToolTip("Открыть папку с игрой")
         self.open_folder_button.setIconSize(QSize(24, 24))
         self.open_folder_button.setCursor(Qt.PointingHandCursor)
         self.open_folder_button.setFixedSize(50, 50)
@@ -751,7 +781,7 @@ class MainWindow(QMainWindow):
         self.start_progress = QProgressBar(self.game_tab)
         self.start_progress.setMinimumHeight(20)
         self.start_progress.setVisible(False)
-        self.start_progress.setFormat('%p%')  # Показываем процент
+        self.start_progress.setFormat("%p%")  # Показываем процент
         self.start_progress.setStyleSheet("""
             QProgressBar {
                 border: 1px solid rgba(85, 85, 85, 0.6);
@@ -783,61 +813,69 @@ class MainWindow(QMainWindow):
         loader_index = self.loader_select.findData(self.last_loader)
         if loader_index >= 0:
             self.loader_select.setCurrentIndex(loader_index)
-        
+
         # Обновляем UI если есть сохранённая сессия Ely.by
-        if hasattr(self, 'ely_session') and self.ely_session:
+        if hasattr(self, "ely_session") and self.ely_session:
             self.update_ely_ui(True)
-            logging.debug(f'UI обновлён для сохранённой сессии: {self.ely_session.get("username")}')
+            logging.debug(
+                f'UI обновлён для сохранённой сессии: {self.ely_session.get("username")}',
+            )
 
     def setup_ely_auth(self) -> None:
         """Проверяет сохранённую сессию"""
         try:
-            self.splash.update_progress(8, 'Проверяем авторизацию')
-            logging.debug('Проверяем авторизацию')
+            self.splash.update_progress(8, "Проверяем авторизацию")
+            logging.debug("Проверяем авторизацию")
             if ely.is_logged_in():
-                logging.debug('Авторизация успешна')
-                self.splash.update_progress(9, 'Авторизация успешна')
-                logging.debug('Загружаем сессию')
-                self.splash.update_progress(10, 'Загружаем сессию')
+                logging.debug("Авторизация успешна")
+                self.splash.update_progress(9, "Авторизация успешна")
+                logging.debug("Загружаем сессию")
+                self.splash.update_progress(10, "Загружаем сессию")
                 self.ely_session = {
-                    'username': ely.username(),
-                    'uuid': ely.uuid(),
-                    'token': ely.token(),
+                    "username": ely.username(),
+                    "uuid": ely.uuid(),
+                    "token": ely.token(),
                 }
-                self.splash.update_progress(11, 'Устанавливаем никнейм')
+                self.splash.update_progress(11, "Устанавливаем никнейм")
                 # Устанавливаем username только если UI уже создан
-                if hasattr(self, 'username') and self.username is not None:
-                    self.username.setText(self.ely_session['username'])
+                if hasattr(self, "username") and self.username is not None:
+                    self.username.setText(self.ely_session["username"])
                 else:
                     # Сохраняем для последующей установки после создания UI
-                    self.last_username = self.ely_session['username']
-                self.splash.update_progress(12, 'Обновляем интерфейс')
+                    self.last_username = self.ely_session["username"]
+                self.splash.update_progress(12, "Обновляем интерфейс")
                 self.update_ely_ui(True)
 
-                self.splash.update_progress(12, 'Проверяем текстуру скина')
+                self.splash.update_progress(12, "Проверяем текстуру скина")
                 try:
-                    logging.debug('Делаем запрос к API')
-                    self.splash.update_progress(13, 'Делаем запрос к API')
+                    logging.debug("Делаем запрос к API")
+                    self.splash.update_progress(13, "Делаем запрос к API")
                     texture_info = requests.get(
                         f'https://authserver.ely.by/session/profile/{self.ely_session["uuid"]}',
                         headers={
-                            'Authorization': f'Bearer {self.ely_session["token"]}',
+                            "Authorization": f'Bearer {self.ely_session["token"]}',
                         },
                     ).json()
 
-                    if 'textures' in texture_info:
-                        logging.debug('Текстура найдена')
-                        logging.debug('Проверяем ссылку на скин')
-                        self.splash.update_progress(14, 'Текстура найдена')
-                        self.splash.update_progress(15, 'Проверяем ссылку на скин')
-                        skin_url = texture_info['textures'].get('SKIN', {}).get('url')
+                    if "textures" in texture_info:
+                        logging.debug("Текстура найдена")
+                        logging.debug("Проверяем ссылку на скин")
+                        self.splash.update_progress(14, "Текстура найдена")
+                        self.splash.update_progress(
+                            15, "Проверяем ссылку на скин",
+                        )
+                        skin_url = (
+                            texture_info["textures"].get("SKIN", {}).get("url")
+                        )
                         if skin_url:
-                            logging.debug('Ссылка найдена')
-                            logging.debug('Делаем запрос на получение данных скина')
-                            self.splash.update_progress(16, 'Ссылка найдена')
+                            logging.debug("Ссылка найдена")
+                            logging.debug(
+                                "Делаем запрос на получение данных скина",
+                            )
+                            self.splash.update_progress(16, "Ссылка найдена")
                             self.splash.update_progress(
                                 17,
-                                'Делаем запрос на получение данных скина',
+                                "Делаем запрос на получение данных скина",
                             )
                             skin_data = requests.get(skin_url).content
                             os.makedirs(SKINS_DIR, exist_ok=True)
@@ -846,36 +884,42 @@ class MainWindow(QMainWindow):
                                     SKINS_DIR,
                                     f'{self.ely_session["username"]}.png',
                                 ),
-                                'wb',
+                                "wb",
                             ) as f:
-                                self.splash.update_progress(18, 'Устанавливаем скин')
+                                self.splash.update_progress(
+                                    18, "Устанавливаем скин",
+                                )
                                 f.write(skin_data)
 
                 except Exception as e:
-                    logging.exception(f'Ошибка проверки скина: {e}')
+                    logging.exception(f"Ошибка проверки скина: {e}")
 
         except Exception as e:
-            logging.exception(f'Ошибка загрузки сессии Ely.by: {e}')
+            logging.exception(f"Ошибка загрузки сессии Ely.by: {e}")
 
     def retranslate_ui(self) -> None:
         """Обновляет все текстовые элементы интерфейса в соответствии с текущим языком"""
-        self.setWindowTitle(self.translator.tr('window_title'))
+        self.setWindowTitle(self.translator.tr("window_title"))
 
-        self.username.setPlaceholderText(self.translator.tr('username_placeholder'))
+        self.username.setPlaceholderText(
+            self.translator.tr("username_placeholder"),
+        )
         self.random_name_button.setToolTip(
-            self.translator.tr('generate_random_username'),
+            self.translator.tr("generate_random_username"),
         )
 
-        self.version_type_select.setItemText(0, self.translator.tr('all versions'))
-        self.version_type_select.setItemText(1, self.translator.tr('favorites'))
+        self.version_type_select.setItemText(
+            0, self.translator.tr("all versions"),
+        )
+        self.version_type_select.setItemText(1, self.translator.tr("favorites"))
 
-        self.loader_select.setItemText(0, self.translator.tr('vanilla'))
-        self.loader_select.setItemText(1, self.translator.tr('forge'))
-        self.loader_select.setItemText(2, self.translator.tr('fabric'))
-        self.loader_select.setItemText(3, self.translator.tr('optifine'))
+        self.loader_select.setItemText(0, self.translator.tr("vanilla"))
+        self.loader_select.setItemText(1, self.translator.tr("forge"))
+        self.loader_select.setItemText(2, self.translator.tr("fabric"))
+        self.loader_select.setItemText(3, self.translator.tr("optifine"))
 
-        self.start_button.setText(self.translator.tr('launch_button'))
-        self.ely_login_button.setText(self.translator.tr('ely_login_button'))
+        self.start_button.setText(self.translator.tr("launch_button"))
+        self.ely_login_button.setText(self.translator.tr("ely_login_button"))
 
     def handle_tab_changed(self, index: int) -> None:
         """Обработчик смены вкладок"""
@@ -883,73 +927,84 @@ class MainWindow(QMainWindow):
         discord_rpc = get_discord_rpc()
         if not discord_rpc.is_connected:
             return
-        
-        tab_names = ['Запуск игры', 'Моды', 'Мои сборки']
+
+        tab_names = ["Запуск игры", "Моды", "Мои сборки"]
         if index < len(tab_names):
-            status_details = f'Просматривает {tab_names[index]}'
+            status_details = f"Просматривает {tab_names[index]}"
             discord_rpc.update_status(
                 state=status_details,
-                details='В лаунчере',
+                details="В лаунчере",
             )
 
     def update_login_button_text(self) -> None:
         self.ely_login_button.setText(
-            'Выйти из Ely.by' if hasattr(self, 'access_token') and self.access_token else 'Войти с Ely.by',
+            "Выйти из Ely.by"
+            if hasattr(self, "access_token") and self.access_token
+            else "Войти с Ely.by",
         )
 
     def show_game_tab(self) -> None:
         """Переключает на вкладку с игрой"""
         self.stacked_widget.setCurrentWidget(self.tab_widget)
         self.tabs.setCurrentIndex(0)
-        
+
         # Обновляем статус Discord
         discord_rpc = get_discord_rpc()
         if discord_rpc.is_connected:
             discord_rpc.set_menu_status()
 
     def toggle_theme(self) -> None:
-        current_theme = getattr(self, 'current_theme', 'dark')
-        new_theme = 'light' if current_theme == 'dark' else 'dark'
+        current_theme = getattr(self, "current_theme", "dark")
+        new_theme = "light" if current_theme == "dark" else "dark"
 
-        self.apply_theme(new_theme == 'dark')
+        self.apply_theme(new_theme == "dark")
 
-        icon_path = 'assets/sun.png' if new_theme == 'light' else 'assets/moon.png'
+        icon_path = (
+            "assets/sun.png" if new_theme == "light" else "assets/moon.png"
+        )
         self.theme_button.setIcon(QIcon(resource_path(icon_path)))
 
-        if hasattr(self.settings_tab, 'theme_button'):
-            self.settings_tab.theme_button.setIcon(QIcon(resource_path(icon_path)))
+        if hasattr(self.settings_tab, "theme_button"):
+            self.settings_tab.theme_button.setIcon(
+                QIcon(resource_path(icon_path)),
+            )
             self.settings_tab.theme_button.setText(
-                'Светлая тема' if new_theme == 'light' else 'Тёмная тема',
+                "Светлая тема" if new_theme == "light" else "Тёмная тема",
             )
 
-        self.settings['theme'] = new_theme
+        self.settings["theme"] = new_theme
         save_settings(self.settings)
 
     def show_settings_tab(self) -> None:
         """Переключает на вкладку с настройками"""
         self.stacked_widget.setCurrentWidget(self.settings_tab)
-        
+
         # Обновляем статус Discord
         discord_rpc = get_discord_rpc()
         if discord_rpc.is_connected:
             discord_rpc.update_status(
-                state='Просматривает настройки',
-                details='В лаунчере',
+                state="Просматривает настройки",
+                details="В лаунчере",
             )
 
     def update_ely_ui(self, logged_in: bool) -> None:
         """Обновляет UI в зависимости от статуса авторизации"""
         # Проверяем, что UI элементы уже созданы
-        if not hasattr(self, 'ely_login_button') or not hasattr(self, 'change_skin_button'):
+        if not hasattr(self, "ely_login_button") or not hasattr(
+            self, "change_skin_button",
+        ):
             return
-            
+
         if logged_in:
             self.ely_login_button.setVisible(False)
             self.change_skin_button.setVisible(True)
             # Блокируем изменение никнейма при активной сессии Ely.by
-            if hasattr(self, 'username') and self.username is not None:
+            if hasattr(self, "username") and self.username is not None:
                 self.username.setReadOnly(True)
-            if hasattr(self, 'random_name_button') and self.random_name_button is not None:
+            if (
+                hasattr(self, "random_name_button")
+                and self.random_name_button is not None
+            ):
                 self.random_name_button.setEnabled(False)
             self.change_skin_button.setStyleSheet("""
                 QPushButton {
@@ -963,30 +1018,35 @@ class MainWindow(QMainWindow):
                     background-color: rgba(33, 136, 56, 0.95);
                 }
             """)
-            self.change_skin_button.setText('Управление скином')
+            self.change_skin_button.setText("Управление скином")
         else:
             self.ely_login_button.setVisible(True)
             self.change_skin_button.setVisible(False)
             # Разблокируем изменение никнейма при отсутствии сессии Ely.by
-            if hasattr(self, 'username') and self.username is not None:
+            if hasattr(self, "username") and self.username is not None:
                 self.username.setReadOnly(False)
-            if hasattr(self, 'random_name_button') and self.random_name_button is not None:
+            if (
+                hasattr(self, "random_name_button")
+                and self.random_name_button is not None
+            ):
                 self.random_name_button.setEnabled(True)
 
     def handle_ely_login(self) -> None:
         """Обработчик кнопки входа/выхода"""
-        if hasattr(self, 'ely_session') and self.ely_session:
+        if hasattr(self, "ely_session") and self.ely_session:
             self.ely_logout()
         else:
             self.ely_login()
         # Обновляем кнопку в настройках, если она существует
-        if hasattr(self, 'settings_tab') and hasattr(self.settings_tab, 'update_logout_button_visibility'):
+        if hasattr(self, "settings_tab") and hasattr(
+            self.settings_tab, "update_logout_button_visibility",
+        ):
             self.settings_tab.update_logout_button_visibility()
 
     def ely_login(self) -> None:
         """Окно авторизации Ely.by (единое поле ввода + регистрация)"""
         dialog = QDialog(self)
-        dialog.setWindowTitle('Вход в Ely.by')
+        dialog.setWindowTitle("Вход в Ely.by")
         dialog.setFixedSize(380, 240)
 
         layout = QVBoxLayout(dialog)
@@ -994,33 +1054,35 @@ class MainWindow(QMainWindow):
         layout.setSpacing(12)
 
         email_input = QLineEdit(dialog)
-        email_input.setPlaceholderText('Email Ely.by')
+        email_input.setPlaceholderText("Email Ely.by")
         email_input.setMinimumHeight(38)
-        
+
         # Пароль с переключателем видимости
         password_row = QHBoxLayout()
         password_row.setSpacing(8)
         password_input = CustomLineEdit(dialog)
-        password_input.setPlaceholderText('Пароль')
+        password_input.setPlaceholderText("Пароль")
         password_input.setEchoMode(QLineEdit.Password)
         password_input.setMinimumHeight(38)
         # Добавим правый отступ под кнопку-глаз
-        password_input.setStyleSheet('QLineEdit { padding-right: 48px; }')
+        password_input.setStyleSheet("QLineEdit { padding-right: 48px; }")
 
         eye_button = QToolButton(password_input)
         eye_button.setCursor(Qt.PointingHandCursor)
-        eye_button.setIcon(QIcon(resource_path('assets/hide.png')))
+        eye_button.setIcon(QIcon(resource_path("assets/hide.png")))
         eye_button.setIconSize(QSize(22, 22))
         eye_button.setFixedSize(40, 28)
-        eye_button.setStyleSheet('QToolButton { border: none; background: transparent; }')
+        eye_button.setStyleSheet(
+            "QToolButton { border: none; background: transparent; }",
+        )
 
         def toggle_password_visibility():
             if password_input.echoMode() == QLineEdit.Password:
                 password_input.setEchoMode(QLineEdit.Normal)
-                eye_button.setIcon(QIcon(resource_path('assets/show.png')))
+                eye_button.setIcon(QIcon(resource_path("assets/show.png")))
             else:
                 password_input.setEchoMode(QLineEdit.Password)
-                eye_button.setIcon(QIcon(resource_path('assets/hide.png')))
+                eye_button.setIcon(QIcon(resource_path("assets/hide.png")))
 
         eye_button.clicked.connect(toggle_password_visibility)
         password_input.set_button(eye_button)
@@ -1029,23 +1091,29 @@ class MainWindow(QMainWindow):
         layout.addWidget(password_input)
 
         # Лейбл ошибок под полями (тонкая строка текста)
-        error_label = QLabel('', dialog)
+        error_label = QLabel("", dialog)
         error_label.setWordWrap(True)
-        error_label.setStyleSheet('QLabel { color: #dc3545; padding: 4px 2px; background: transparent; }')
+        error_label.setStyleSheet(
+            "QLabel { color: #dc3545; padding: 4px 2px; background: transparent; }",
+        )
         layout.addWidget(error_label)
 
         buttons_row = QHBoxLayout()
 
-        register_btn = QPushButton('Нет аккаунта? Регистрация.', dialog)
+        register_btn = QPushButton("Нет аккаунта? Регистрация.", dialog)
         register_btn.setCursor(Qt.PointingHandCursor)
         register_btn.setFlat(True)
-        register_btn.setStyleSheet('QPushButton { color: #5aa0ff; text-align: left; }\nQPushButton:hover { text-decoration: underline; }')
-        register_btn.clicked.connect(lambda: webbrowser.open('https://account.ely.by/register'))
+        register_btn.setStyleSheet(
+            "QPushButton { color: #5aa0ff; text-align: left; }\nQPushButton:hover { text-decoration: underline; }",
+        )
+        register_btn.clicked.connect(
+            lambda: webbrowser.open("https://account.ely.by/register"),
+        )
         # Отключаем автоактивацию по Enter
         register_btn.setAutoDefault(False)
         register_btn.setDefault(False)
 
-        login_btn = QPushButton('Войти', dialog)
+        login_btn = QPushButton("Войти", dialog)
         login_btn.setMinimumHeight(36)
         # Делает кнопку входа дефолтной для Enter
         login_btn.setAutoDefault(True)
@@ -1058,15 +1126,15 @@ class MainWindow(QMainWindow):
         layout.addLayout(buttons_row)
 
         def clear_field_styles():
-            email_input.setStyleSheet('')
-            password_input.setStyleSheet('')
-            error_label.setText('')
+            email_input.setStyleSheet("")
+            password_input.setStyleSheet("")
+            error_label.setText("")
 
         email_input.textChanged.connect(clear_field_styles)
         password_input.textChanged.connect(clear_field_styles)
 
         def set_error(widget: QLineEdit, text: str):
-            widget.setStyleSheet('QLineEdit { border: 1px solid #dc3545; }')
+            widget.setStyleSheet("QLineEdit { border: 1px solid #dc3545; }")
             error_label.setText(text)
 
         def map_error_message(err_text: str) -> tuple[str, str]:
@@ -1074,15 +1142,22 @@ class MainWindow(QMainWindow):
             text_low = err_text.lower()
 
             # Обобщённый ответ Ely.by — не указывает, что именно неверно
-            if 'invalid credentials' in text_low or 'invalid username or password' in text_low:
-                return ('generic', 'Неверный e-mail или пароль')
-            if 'user not found' in text_low or 'no such user' in text_low or 'unknownaccount' in text_low:
-                return ('email', 'Мы не нашли пользователя с таким e-mail!')
-            if 'bad credentials' in text_low or 'wrong password' in text_low:
-                return ('password', 'Введён неверный пароль!')
+            if (
+                "invalid credentials" in text_low
+                or "invalid username or password" in text_low
+            ):
+                return ("generic", "Неверный e-mail или пароль")
+            if (
+                "user not found" in text_low
+                or "no such user" in text_low
+                or "unknownaccount" in text_low
+            ):
+                return ("email", "Мы не нашли пользователя с таким e-mail!")
+            if "bad credentials" in text_low or "wrong password" in text_low:
+                return ("password", "Введён неверный пароль!")
 
             # По умолчанию — общее сообщение без указания поля
-            return ('generic', 'Не удалось выполнить вход. Проверьте данные.')
+            return ("generic", "Не удалось выполнить вход. Проверьте данные.")
 
         def perform_login():
             email = email_input.text().strip()
@@ -1090,9 +1165,9 @@ class MainWindow(QMainWindow):
             if not email or not password:
                 # Встроенная ошибка без QMessageBox
                 if not email:
-                    set_error(email_input, 'Введите email Ely.by')
+                    set_error(email_input, "Введите email Ely.by")
                 elif not password:
-                    set_error(password_input, 'Введите пароль')
+                    set_error(password_input, "Введите пароль")
                 return
             try:
                 # ЛОГИКА НЕ МЕНЯЛАСЬ: используем тот же вызов
@@ -1101,31 +1176,33 @@ class MainWindow(QMainWindow):
                 # Сохранение (оба механизма)
                 ely.write_login_data(
                     {
-                        'username': self.ely_session['username'],
-                        'uuid': self.ely_session['uuid'],
-                        'token': self.ely_session['token'],
-                        'logged_in': True,
-                    }
+                        "username": self.ely_session["username"],
+                        "uuid": self.ely_session["uuid"],
+                        "token": self.ely_session["token"],
+                        "logged_in": True,
+                    },
                 )
                 save_ely_session(self.settings, self.ely_session)
 
                 self.update_ely_ui(True)
-                self.username.setText(self.ely_session['username'])
+                self.username.setText(self.ely_session["username"])
                 dialog.accept()
-                QMessageBox.information(self, 'Успешно', 'Авторизация прошла успешно!')
+                QMessageBox.information(
+                    self, "Успешно", "Авторизация прошла успешно!",
+                )
             except Exception as e:
                 # Парсим ответ и отображаем корректно
                 err_text = str(e)
                 try:
                     err_json = json.loads(err_text)
                     # Ely.by обычно возвращает {error, errorMessage}
-                    err_text = err_json.get('errorMessage') or err_text
+                    err_text = err_json.get("errorMessage") or err_text
                 except Exception:
                     pass
                 field, msg = map_error_message(err_text)
-                if field == 'email':
+                if field == "email":
                     set_error(email_input, msg)
-                elif field == 'password':
+                elif field == "password":
                     set_error(password_input, msg)
                 else:
                     error_label.setText(msg)
@@ -1142,39 +1219,39 @@ class MainWindow(QMainWindow):
         dialog.close()
         try:
             self.ely_session = ely.auth_device_code()
-            
+
             # Сохраняем через оба механизма
             ely.write_login_data(
                 {
-                    'username': self.ely_session['username'],
-                    'uuid': self.ely_session['uuid'],
-                    'token': self.ely_session['token'],
-                    'logged_in': True,
-                }
+                    "username": self.ely_session["username"],
+                    "uuid": self.ely_session["uuid"],
+                    "token": self.ely_session["token"],
+                    "logged_in": True,
+                },
             )
             save_ely_session(self.settings, self.ely_session)
-            
+
             self.update_ely_ui(True)
-            self.username.setText(self.ely_session['username'])
+            self.username.setText(self.ely_session["username"])
             QMessageBox.information(
                 self,
-                'Успешно',
+                "Успешно",
                 f'Вы вошли как {self.ely_session["username"]}',
             )
         except Exception as e:
-            QMessageBox.critical(self, 'Ошибка', str(e))
+            QMessageBox.critical(self, "Ошибка", str(e))
 
     def start_credentials_auth(self, dialog: QInputDialog) -> None:
         """Запуск авторизации по логину/паролю"""
         dialog.close()
-        email, ok = QInputDialog.getText(self, 'Вход', 'Введите email Ely.by:')
+        email, ok = QInputDialog.getText(self, "Вход", "Введите email Ely.by:")
         if not (ok or email):
             return
 
         password, ok = QInputDialog.getText(
             self,
-            'Вход',
-            'Введите пароль:',
+            "Вход",
+            "Введите пароль:",
             QLineEdit.Password,
         )
         if not (ok or password):
@@ -1182,56 +1259,60 @@ class MainWindow(QMainWindow):
 
         try:
             self.ely_session = ely.auth(email, password)
-            
+
             # Сохраняем через оба механизма
             ely.write_login_data(
                 {
-                    'username': self.ely_session['username'],
-                    'uuid': self.ely_session['uuid'],
-                    'token': self.ely_session['token'],
-                    'logged_in': True,
-                }
+                    "username": self.ely_session["username"],
+                    "uuid": self.ely_session["uuid"],
+                    "token": self.ely_session["token"],
+                    "logged_in": True,
+                },
             )
             save_ely_session(self.settings, self.ely_session)
-            
+
             self.update_ely_ui(True)
-            self.username.setText(self.ely_session['username'])
+            self.username.setText(self.ely_session["username"])
             QMessageBox.information(
                 self,
-                'Успешно',
+                "Успешно",
                 f'Вы вошли как {self.ely_session["username"]}',
             )
         except Exception as e:
-            QMessageBox.critical(self, 'Ошибка', str(e))
+            QMessageBox.critical(self, "Ошибка", str(e))
 
     def ely_logout(self) -> None:
         """Выход из аккаунта Ely.by"""
         try:
             # Очищаем через старый механизм
             ely.logout()
-            
+
             # Очищаем через новый механизм
             self.ely_session = None
             clear_ely_session(self.settings)
-            
+
             # Обновляем UI
             self.update_ely_ui(False)
-            self.username.setText('')
-            if hasattr(self, 'settings_tab') and hasattr(self.settings_tab, 'update_logout_button_visibility'):
+            self.username.setText("")
+            if hasattr(self, "settings_tab") and hasattr(
+                self.settings_tab, "update_logout_button_visibility",
+            ):
                 self.settings_tab.update_logout_button_visibility()
-            
-            QMessageBox.information(self, 'Выход', 'Вы вышли из аккаунта Ely.by')
-            logging.info('Выход из Ely.by выполнен')
+
+            QMessageBox.information(
+                self, "Выход", "Вы вышли из аккаунта Ely.by",
+            )
+            logging.info("Выход из Ely.by выполнен")
         except Exception as e:
-            logging.exception(f'Ошибка при выходе из Ely.by: {e}')
+            logging.exception(f"Ошибка при выходе из Ely.by: {e}")
 
     def open_support_tab(self) -> None:
         support_tab = QWidget()
         layout = QVBoxLayout(support_tab)
 
         text = QLabel(
-            'Наш лаунчер абсолютно бесплатный и безопасный, если тебе нравится лаунчер, его функции, дизайн,'
-            '\nты можешь поддержать разработчика ❤',
+            "Наш лаунчер абсолютно бесплатный и безопасный, если тебе нравится лаунчер, его функции, дизайн,"
+            "\nты можешь поддержать разработчика ❤",
         )
         text.setAlignment(Qt.AlignCenter)
         text.setWordWrap(True)
@@ -1239,7 +1320,7 @@ class MainWindow(QMainWindow):
         text.setFixedSize(700, 900)
 
         # Кнопка "Поддержать"
-        donate_button = QPushButton('Поддержать')
+        donate_button = QPushButton("Поддержать")
         donate_button.setFixedSize(200, 50)
         donate_button.setStyleSheet("""
             QPushButton {
@@ -1253,7 +1334,7 @@ class MainWindow(QMainWindow):
             }
         """)
         donate_button.clicked.connect(
-            lambda: webbrowser.open('https://www.donationalerts.com/r/16steyy'),
+            lambda: webbrowser.open("https://www.donationalerts.com/r/16steyy"),
         )
         layout.addWidget(donate_button, alignment=Qt.AlignCenter)
 
@@ -1264,12 +1345,12 @@ class MainWindow(QMainWindow):
 
     def change_ely_skin(self) -> None:
         """Открывает диалог управления скином для Ely.by"""
-        if not hasattr(self, 'ely_session') or not self.ely_session:
-            QMessageBox.warning(self, 'Ошибка', 'Сначала войдите в Ely.by!')
+        if not hasattr(self, "ely_session") or not self.ely_session:
+            QMessageBox.warning(self, "Ошибка", "Сначала войдите в Ely.by!")
             return
 
         dialog = QDialog(self)
-        dialog.setWindowTitle('Управление скином')
+        dialog.setWindowTitle("Управление скином")
         dialog.setFixedSize(400, 250)
 
         layout = QVBoxLayout()
@@ -1277,7 +1358,7 @@ class MainWindow(QMainWindow):
         # (Удалено по требованию) Кнопка загрузки нового скина
 
         # Кнопка сброса скина
-        reset_btn = QPushButton('Сбросить скин на стандартный')
+        reset_btn = QPushButton("Сбросить скин на стандартный")
         reset_btn.setStyleSheet("""
             QPushButton {
                 background-color: #dc3545;
@@ -1294,7 +1375,7 @@ class MainWindow(QMainWindow):
         layout.addWidget(reset_btn)
 
         # Кнопка открытия страницы управления
-        manage_btn = QPushButton('Открыть страницу управления')
+        manage_btn = QPushButton("Открыть страницу управления")
         manage_btn.setStyleSheet("""
             QPushButton {
                 background-color: #007bff;
@@ -1315,7 +1396,7 @@ class MainWindow(QMainWindow):
         layout.addWidget(manage_btn)
 
         # Кнопка закрытия
-        close_btn = QPushButton('Закрыть')
+        close_btn = QPushButton("Закрыть")
         close_btn.clicked.connect(dialog.close)
         layout.addWidget(close_btn)
 
@@ -1329,9 +1410,9 @@ class MainWindow(QMainWindow):
         # Диалог выбора файла
         file_path, _ = QFileDialog.getOpenFileName(
             self,
-            'Выберите PNG-файл скина (64x64 или 64x32)',
-            '',
-            'PNG Images (*.png)',
+            "Выберите PNG-файл скина (64x64 или 64x32)",
+            "",
+            "PNG Images (*.png)",
         )
 
         if not file_path:
@@ -1340,9 +1421,9 @@ class MainWindow(QMainWindow):
         # Диалог выбора типа модели
         model_type, ok = QInputDialog.getItem(
             self,
-            'Тип модели',
-            'Выберите тип модели:',
-            ['classic', 'slim'],
+            "Тип модели",
+            "Выберите тип модели:",
+            ["classic", "slim"],
             0,
             False,
         )
@@ -1354,65 +1435,77 @@ class MainWindow(QMainWindow):
             # Загружаем скин
             success, message = ElySkinManager.upload_skin(
                 file_path,
-                self.ely_session['token'],
+                self.ely_session["token"],
                 model_type,
             )
 
             if success:
                 # Скачиваем обновлённый скин для отображения в лаунчере
-                skin_url = ElySkinManager.get_skin_url(self.ely_session['username'])
+                skin_url = ElySkinManager.get_skin_url(
+                    self.ely_session["username"],
+                )
                 if skin_url:
                     skin_data = requests.get(skin_url).content
-                    skin_path = os.path.join(SKINS_DIR, f'{self.username.text()}.png')
+                    skin_path = os.path.join(
+                        SKINS_DIR, f"{self.username.text()}.png",
+                    )
 
                     os.makedirs(SKINS_DIR, exist_ok=True)
-                    with open(skin_path, 'wb') as f:
+                    with open(skin_path, "wb") as f:
                         f.write(skin_data)
 
-                    QMessageBox.information(self, 'Успех', message)
+                    QMessageBox.information(self, "Успех", message)
                 else:
                     QMessageBox.warning(
                         self,
-                        'Ошибка',
-                        'Не удалось получить новый скин',
+                        "Ошибка",
+                        "Не удалось получить новый скин",
                     )
             else:
-                QMessageBox.critical(self, 'Ошибка', message)
+                QMessageBox.critical(self, "Ошибка", message)
 
         except Exception as e:
-            QMessageBox.critical(self, 'Ошибка', str(e))
+            QMessageBox.critical(self, "Ошибка", str(e))
 
     def reset_ely_skin(self, parent_dialog: QInputDialog) -> None:
         """Сбрасывает скин на стандартный"""
         parent_dialog.close()
 
         try:
-            success, message = ElySkinManager.reset_skin(self.ely_session['token'])
+            success, message = ElySkinManager.reset_skin(
+                self.ely_session["token"],
+            )
             if success:
                 # Удаляем локальную копию скина
-                skin_path = os.path.join(SKINS_DIR, f'{self.username.text()}.png')
+                skin_path = os.path.join(
+                    SKINS_DIR, f"{self.username.text()}.png",
+                )
                 if os.path.exists(skin_path):
                     os.remove(skin_path)
 
-                QMessageBox.information(self, 'Успех', message)
+                QMessageBox.information(self, "Успех", message)
             else:
-                QMessageBox.critical(self, 'Ошибка', message)
+                QMessageBox.critical(self, "Ошибка", message)
         except Exception as e:
-            QMessageBox.critical(self, 'Ошибка', str(e))
+            QMessageBox.critical(self, "Ошибка", str(e))
 
     def update_version_list(self) -> None:
         """Обновляет список версий в зависимости от выбранного типа"""
         current_text = self.version_select.currentText()
         self.version_select.clear()
 
-        show_only_favorites = self.version_type_select.currentText() == 'Избранные'
-        show_snapshots = self.settings.get('show_snapshots', False)
+        show_only_favorites = (
+            self.version_type_select.currentText() == "Избранные"
+        )
+        show_snapshots = self.settings.get("show_snapshots", False)
 
         for v in get_version_list():
-            if v['type'] == 'release' or (show_snapshots and v['type'] == 'snapshot'):
-                version_id = v['id']
+            if v["type"] == "release" or (
+                show_snapshots and v["type"] == "snapshot"
+            ):
+                version_id = v["id"]
                 if not show_only_favorites or version_id in self.favorites:
-                    if v['type'] == 'snapshot':
+                    if v["type"] == "snapshot":
                         display_text = f"{version_id} (snapshot)"
                     else:
                         display_text = version_id
@@ -1426,7 +1519,7 @@ class MainWindow(QMainWindow):
                 self.version_select.setCurrentIndex(index)
             else:
                 # Ищем по ID версии (для совместимости со старыми настройками)
-                current_version_id = current_text.replace(' (snapshot)', '')
+                current_version_id = current_text.replace(" (snapshot)", "")
                 for i in range(self.version_select.count()):
                     if self.version_select.itemData(i) == current_version_id:
                         self.version_select.setCurrentIndex(i)
@@ -1441,11 +1534,11 @@ class MainWindow(QMainWindow):
             version_id = self.version_select.currentData()
             if version_id:
                 return version_id
-        
+
         current_text = self.version_select.currentText()
         if current_text:
-            return current_text.replace(' (snapshot)', '')
-        return ''
+            return current_text.replace(" (snapshot)", "")
+        return ""
 
     def toggle_sidebar(self) -> None:
         is_visible = self.sidebar.isVisible()
@@ -1453,7 +1546,9 @@ class MainWindow(QMainWindow):
         self.toggle_sidebar_button.setIcon(
             QIcon(
                 resource_path(
-                    'assets/toggle_open.png' if is_visible else 'assets/toggle_close.png',
+                    "assets/toggle_open.png"
+                    if is_visible
+                    else "assets/toggle_close.png",
                 ),
             ),
         )
@@ -1469,11 +1564,11 @@ class MainWindow(QMainWindow):
         else:
             self.favorites.append(version)
 
-        self.settings['favorites'] = self.favorites
+        self.settings["favorites"] = self.favorites
         save_settings(self.settings)
 
         self.update_favorite_button()
-        if self.version_type_select.currentText() == 'Избранные':
+        if self.version_type_select.currentText() == "Избранные":
             self.update_version_list()
 
     def update_favorite_button(self) -> None:
@@ -1486,26 +1581,28 @@ class MainWindow(QMainWindow):
         self.favorite_button.setEnabled(True)
         self.favorite_button.setChecked(version in self.favorites)
         self.favorite_button.setStyleSheet(
-            'QPushButton {color: %s;}' % ('gold' if version in self.favorites else 'gray'),
+            "QPushButton {color: %s;}"
+            % ("gold" if version in self.favorites else "gray"),
         )
 
     def get_selected_memory(self) -> None:
         """Возвращает выбранное количество памяти в мегабайтах"""
-        return self.settings_tab.memory_slider.value() * 1024 
+        return self.settings_tab.memory_slider.value() * 1024
+
     def load_skin(self) -> None:
         source_dialog = QDialog(self)
-        source_dialog.setWindowTitle('Выберите источник скина')
+        source_dialog.setWindowTitle("Выберите источник скина")
         source_dialog.setFixedSize(300, 200)
 
         layout = QVBoxLayout()
 
-        label = QLabel('Откуда загрузить скин?')
+        label = QLabel("Откуда загрузить скин?")
         layout.addWidget(label)
 
-        local_button = QPushButton('С компьютера')
+        local_button = QPushButton("С компьютера")
         layout.addWidget(local_button)
 
-        elyby_button = QPushButton('С Ely.by')
+        elyby_button = QPushButton("С Ely.by")
         layout.addWidget(elyby_button)
 
         source_dialog.setLayout(layout)
@@ -1514,43 +1611,43 @@ class MainWindow(QMainWindow):
             source_dialog.close()
             file_path, _ = QFileDialog.getOpenFileName(
                 self,
-                'Выбери PNG-файл скина',
-                '',
-                'PNG файлы (*.png)',
+                "Выбери PNG-файл скина",
+                "",
+                "PNG файлы (*.png)",
             )
             if file_path:
                 try:
                     os.makedirs(SKINS_DIR, exist_ok=True)
                     dest_path = os.path.join(
                         SKINS_DIR,
-                        f'{self.username.text().strip()}.png',
+                        f"{self.username.text().strip()}.png",
                     )
                     shutil.copy(file_path, dest_path)
                     QMessageBox.information(
                         self,
-                        'Скин загружен',
-                        'Скин успешно загружен!',
+                        "Скин загружен",
+                        "Скин успешно загружен!",
                     )
                 except Exception as e:
-                    logging.exception(f'Ошибка загрузки скина: {e}')
+                    logging.exception(f"Ошибка загрузки скина: {e}")
                     QMessageBox.critical(
                         self,
-                        'Ошибка',
-                        f'Не удалось загрузить скин: {e}',
+                        "Ошибка",
+                        f"Не удалось загрузить скин: {e}",
                     )
 
         def load_from_elyby():
             source_dialog.close()
             username = self.username.text().strip()
             if not username:
-                QMessageBox.warning(self, 'Ошибка', 'Введите имя игрока!')
+                QMessageBox.warning(self, "Ошибка", "Введите имя игрока!")
                 return
 
             if ElyBySkinManager.download_skin(username):
                 QMessageBox.information(
                     self,
-                    'Скин загружен',
-                    'Скин успешно загружен с Ely.by!',
+                    "Скин загружен",
+                    "Скин успешно загружен с Ely.by!",
                 )
             else:
                 ElyBySkinManager.authorize_and_get_skin(self, username)
@@ -1563,29 +1660,29 @@ class MainWindow(QMainWindow):
     def load_user_data(self) -> None:
         if os.path.exists(self.user_data_path):
             try:
-                with open(self.user_data_path, encoding='utf-8') as f:
+                with open(self.user_data_path, encoding="utf-8") as f:
                     return json.load(f)
             except Exception as e:
-                logging.info('⚠️ Ошибка загрузки user_data:', e)
-        return {'launch_count': 0, 'achievements': []}
+                logging.info("⚠️ Ошибка загрузки user_data:", e)
+        return {"launch_count": 0, "achievements": []}
 
     def save_user_data(self) -> None:
         try:
-            with open(self.user_data_path, 'w', encoding='utf-8') as f:
+            with open(self.user_data_path, "w", encoding="utf-8") as f:
                 json.dump(self.user_data, f, indent=4)
         except Exception as e:
-            logging.info('⚠️ Ошибка сохранения user_data:', e)
+            logging.info("⚠️ Ошибка сохранения user_data:", e)
 
     def increment_launch_count(self) -> None:
-        self.user_data['launch_count'] += 1
-        count = self.user_data['launch_count']
-        logging.info(f'🚀 Запуск №{count}')
+        self.user_data["launch_count"] += 1
+        count = self.user_data["launch_count"]
+        logging.info(f"🚀 Запуск №{count}")
 
         # Проверка достижений
-        if count >= 1 and 'first_launch' not in self.user_data['achievements']:
-            self.user_data['achievements'].append('first_launch')
-        if count >= 5 and 'five_launches' not in self.user_data['achievements']:
-            self.user_data['achievements'].append('five_launches')
+        if count >= 1 and "first_launch" not in self.user_data["achievements"]:
+            self.user_data["achievements"].append("first_launch")
+        if count >= 5 and "five_launches" not in self.user_data["achievements"]:
+            self.user_data["achievements"].append("five_launches")
 
         self.save_user_data()
 
@@ -1999,70 +2096,73 @@ class MainWindow(QMainWindow):
 
         # Применяем выбранную тему
         self.setStyleSheet(dark_theme_css if dark_theme else light_theme_css)
-        self.current_theme = 'dark' if dark_theme else 'light'
+        self.current_theme = "dark" if dark_theme else "light"
 
         # Меняем иконки в зависимости от темы
-        icon_suffix = '' if dark_theme else '_dark'
+        icon_suffix = "" if dark_theme else "_dark"
 
         # Обновляем иконки кнопок, если они существуют
-        if hasattr(self, 'theme_button'):
+        if hasattr(self, "theme_button"):
             self.theme_button.setIcon(
-                QIcon(resource_path(f'assets/sun{icon_suffix}.png')),
+                QIcon(resource_path(f"assets/sun{icon_suffix}.png")),
             )
-        if hasattr(self, 'settings_button'):
+        if hasattr(self, "settings_button"):
             self.settings_button.setIcon(
-                QIcon(resource_path(f'assets/set64{icon_suffix}.png')),
+                QIcon(resource_path(f"assets/set64{icon_suffix}.png")),
             )
-        if hasattr(self, 'telegram_button'):
+        if hasattr(self, "telegram_button"):
             self.telegram_button.setIcon(
-                QIcon(resource_path(f'assets/tg{icon_suffix}.png')),
+                QIcon(resource_path(f"assets/tg{icon_suffix}.png")),
             )
-        if hasattr(self, 'support_button'):
+        if hasattr(self, "support_button"):
             self.support_button.setIcon(
-                QIcon(resource_path(f'assets/support64{icon_suffix}.png')),
+                QIcon(resource_path(f"assets/support64{icon_suffix}.png")),
             )
-        if hasattr(self, 'play_button'):
+        if hasattr(self, "play_button"):
             self.play_button.setIcon(
-                QIcon(resource_path(f'assets/play64{icon_suffix}.png')),
+                QIcon(resource_path(f"assets/play64{icon_suffix}.png")),
             )
-        if hasattr(self, 'toggle_sidebar_button'):
+        if hasattr(self, "toggle_sidebar_button"):
             is_visible = self.sidebar.isVisible()
-            icon_name = 'toggle_open' if is_visible else 'toggle_close'
+            icon_name = "toggle_open" if is_visible else "toggle_close"
             self.toggle_sidebar_button.setIcon(
-                QIcon(resource_path(f'assets/{icon_name}{icon_suffix}.png')),
+                QIcon(resource_path(f"assets/{icon_name}{icon_suffix}.png")),
             )
-        if hasattr(self, 'random_name_button'):
+        if hasattr(self, "random_name_button"):
             self.random_name_button.setIcon(
-                QIcon(resource_path(f'assets/random{icon_suffix}.png')),
+                QIcon(resource_path(f"assets/random{icon_suffix}.png")),
             )
-        if hasattr(self, 'open_folder_button'):
+        if hasattr(self, "open_folder_button"):
             self.open_folder_button.setIcon(
-                QIcon(resource_path(f'assets/folder{icon_suffix}.png')),
+                QIcon(resource_path(f"assets/folder{icon_suffix}.png")),
             )
-        if hasattr(self, 'favorite_button'):
+        if hasattr(self, "favorite_button"):
             # Для кнопки избранного используем цвет вместо иконки
             version = self.get_selected_version_id()
             if version:
                 self.favorite_button.setStyleSheet(
-                    'QPushButton {color: %s;}' % ('gold' if version in self.favorites else 'gray'),
+                    "QPushButton {color: %s;}"
+                    % ("gold" if version in self.favorites else "gray"),
                 )
-        if hasattr(self, 'ely_button'):
+        if hasattr(self, "ely_button"):
             # Для кнопки Ely.by используем стандартную иконку
-            self.ely_button.setIcon(QIcon(resource_path('assets/account.png')))
-        if hasattr(self, 'skin_button'):
+            self.ely_button.setIcon(QIcon(resource_path("assets/account.png")))
+        if hasattr(self, "skin_button"):
             # Для кнопки скина используем стандартную иконку
-            self.skin_button.setIcon(QIcon(resource_path('assets/change_name.png')))
+            self.skin_button.setIcon(
+                QIcon(resource_path("assets/change_name.png")),
+            )
 
         # Обновляем иконки в настройках
-        if hasattr(self, 'settings_tab'):
-            if hasattr(self.settings_tab, 'theme_button'):
+        if hasattr(self, "settings_tab"):
+            if hasattr(self.settings_tab, "theme_button"):
                 self.settings_tab.theme_button.setIcon(
-                    QIcon(resource_path(f'assets/sun{icon_suffix}.png')),
+                    QIcon(resource_path(f"assets/sun{icon_suffix}.png")),
                 )
 
         # Обновляем цвет MOTD-сообщения
-        if hasattr(self, 'motd_label'):
-            color = '#aaaaaa' if dark_theme else '#666666'
+        if hasattr(self, "motd_label"):
+            color = "#aaaaaa" if dark_theme else "#666666"
             self.motd_label.setStyleSheet(f"""
                 color: {color};
                 font-style: italic;
@@ -2076,24 +2176,30 @@ class MainWindow(QMainWindow):
         # Сохраняем текущий выбор
         current_version = self.get_selected_version_id()
         if current_version:
-            self.settings['last_version'] = current_version
-            self.settings['last_loader'] = self.loader_select.currentData()
-            self.settings['show_snapshots'] = self.settings_tab.show_snapshots_checkbox.isChecked()
+            self.settings["last_version"] = current_version
+            self.settings["last_loader"] = self.loader_select.currentData()
+            self.settings["show_snapshots"] = (
+                self.settings_tab.show_snapshots_checkbox.isChecked()
+            )
 
-        self.settings['last_username'] = self.username.text().strip()
-        
+        self.settings["last_username"] = self.username.text().strip()
+
         # Сохраняем настройки консоли
-        if hasattr(self.settings_tab, 'show_console_checkbox'):
-            self.settings['show_console'] = self.settings_tab.show_console_checkbox.isChecked()
-        if hasattr(self.settings_tab, 'hide_console_checkbox'):
-            self.settings['hide_console_after_launch'] = self.settings_tab.hide_console_checkbox.isChecked()
-            
+        if hasattr(self.settings_tab, "show_console_checkbox"):
+            self.settings["show_console"] = (
+                self.settings_tab.show_console_checkbox.isChecked()
+            )
+        if hasattr(self.settings_tab, "hide_console_checkbox"):
+            self.settings["hide_console_after_launch"] = (
+                self.settings_tab.hide_console_checkbox.isChecked()
+            )
+
         save_settings(self.settings)
-        
+
         # Отключаем Discord RPC
-        logging.info('Отключение Discord Rich Presence...')
+        logging.info("Отключение Discord Rich Presence...")
         shutdown_discord_rpc()
-        
+
         event.accept()
 
     def close_launcher(self) -> None:
@@ -2103,128 +2209,160 @@ class MainWindow(QMainWindow):
     def is_minecraft_running(self) -> bool:
         """Проверяет, запущен ли уже процесс Minecraft"""
         try:
-            if platform.system() == 'Windows':
+            if platform.system() == "Windows":
                 # Для Windows используем tasklist
                 result = subprocess.run(
-                    ['tasklist', '/FI', 'IMAGENAME eq java.exe', '/FO', 'CSV'],
-                    capture_output=True,
+                    ["tasklist", "/FI", "IMAGENAME eq java.exe", "/FO", "CSV"],
+                    check=False, capture_output=True,
                     text=True,
-                    creationflags=subprocess.CREATE_NO_WINDOW
+                    creationflags=subprocess.CREATE_NO_WINDOW,
                 )
-                if result.returncode == 0 and 'java.exe' in result.stdout:
+                if result.returncode == 0 and "java.exe" in result.stdout:
                     # Дополнительная проверка - ищем процессы с аргументами Minecraft
                     result_detailed = subprocess.run(
-                        ['wmic', 'process', 'where', 'name="java.exe"', 'get', 'commandline'],
-                        capture_output=True,
+                        [
+                            "wmic",
+                            "process",
+                            "where",
+                            'name="java.exe"',
+                            "get",
+                            "commandline",
+                        ],
+                        check=False, capture_output=True,
                         text=True,
-                        creationflags=subprocess.CREATE_NO_WINDOW
+                        creationflags=subprocess.CREATE_NO_WINDOW,
                     )
                     if result_detailed.returncode == 0:
                         command_lines = result_detailed.stdout.lower()
                         # Проверяем наличие ключевых слов Minecraft
-                        minecraft_keywords = ['minecraft', 'net.minecraft', 'modlauncher', 'forge', 'fabric']
+                        minecraft_keywords = [
+                            "minecraft",
+                            "net.minecraft",
+                            "modlauncher",
+                            "forge",
+                            "fabric",
+                        ]
                         for keyword in minecraft_keywords:
                             if keyword in command_lines:
-                                logging.info(f'[LAUNCHER] Found running Minecraft process with keyword: {keyword}')
+                                logging.info(
+                                    f"[LAUNCHER] Found running Minecraft process with keyword: {keyword}",
+                                )
                                 return True
             else:
                 # Для Linux/macOS используем ps
                 result = subprocess.run(
-                    ['ps', 'aux'],
-                    capture_output=True,
-                    text=True
+                    ["ps", "aux"], check=False, capture_output=True, text=True,
                 )
                 if result.returncode == 0:
                     lines = result.stdout.lower()
-                    minecraft_keywords = ['minecraft', 'net.minecraft', 'modlauncher', 'forge', 'fabric']
+                    minecraft_keywords = [
+                        "minecraft",
+                        "net.minecraft",
+                        "modlauncher",
+                        "forge",
+                        "fabric",
+                    ]
                     for keyword in minecraft_keywords:
-                        if keyword in lines and 'java' in lines:
-                            logging.info(f'[LAUNCHER] Found running Minecraft process with keyword: {keyword}')
+                        if keyword in lines and "java" in lines:
+                            logging.info(
+                                f"[LAUNCHER] Found running Minecraft process with keyword: {keyword}",
+                            )
                             return True
-            
-            logging.info('[LAUNCHER] No running Minecraft processes found')
+
+            logging.info("[LAUNCHER] No running Minecraft processes found")
             return False
-            
+
         except Exception as e:
-            logging.exception(f'[LAUNCHER] Error checking for running Minecraft processes: {e}')
+            logging.exception(
+                f"[LAUNCHER] Error checking for running Minecraft processes: {e}",
+            )
             # В случае ошибки разрешаем запуск (безопасный вариант)
             return False
 
     def launch_game(self) -> None:
         try:
-            logging.info('[LAUNCHER] Starting game launch process...')
+            logging.info("[LAUNCHER] Starting game launch process...")
 
             # Проверяем, не запущена ли уже игра (если включена проверка)
-            if self.settings.get('check_running_processes', True) and self.is_minecraft_running():
+            if (
+                self.settings.get("check_running_processes", True)
+                and self.is_minecraft_running()
+            ):
                 QMessageBox.warning(
-                    self, 
-                    'Игра уже запущена', 
-                    'Minecraft уже запущен! Пожалуйста, закройте текущий экземпляр игры перед запуском нового.\n\nВы можете отключить эту проверку в настройках.'
+                    self,
+                    "Игра уже запущена",
+                    "Minecraft уже запущен! Пожалуйста, закройте текущий экземпляр игры перед запуском нового.\n\nВы можете отключить эту проверку в настройках.",
                 )
                 return
 
             username = self.username.text().strip()
             if not username:
-                QMessageBox.warning(self, 'Ошибка', 'Введите имя игрока!')
+                QMessageBox.warning(self, "Ошибка", "Введите имя игрока!")
                 return
 
             version = self.get_selected_version_id()
             loader_type = self.loader_select.currentData()
             memory_mb = self.get_selected_memory()
-            close_on_launch = self.settings_tab.close_on_launch_checkbox.isChecked()
+            close_on_launch = (
+                self.settings_tab.close_on_launch_checkbox.isChecked()
+            )
 
             logging.info(
-                f'[LAUNCHER] Launch parameters: '
-                f'User: {username}, '
-                f'Version: {version}, '
-                f'Loader: {loader_type}, '
-                f'Memory: {memory_mb}MB, '
-                f'Close on launch: {close_on_launch}',
+                f"[LAUNCHER] Launch parameters: "
+                f"User: {username}, "
+                f"Version: {version}, "
+                f"Loader: {loader_type}, "
+                f"Memory: {memory_mb}MB, "
+                f"Close on launch: {close_on_launch}",
             )
-            
+
             # Обновляем статус Discord
             discord_rpc = get_discord_rpc()
             if discord_rpc.is_connected:
                 discord_rpc.set_launching_status()
 
             # Handle Ely.by session
-            if not hasattr(self, 'ely_session'):
+            if not hasattr(self, "ely_session"):
                 self.ely_session = None
-                logging.info('[LAUNCHER] No Ely.by session found')
+                logging.info("[LAUNCHER] No Ely.by session found")
 
             # Prepare skin
-            skin_path = os.path.join(SKINS_DIR, f'{username}.png')
+            skin_path = os.path.join(SKINS_DIR, f"{username}.png")
             if os.path.exists(skin_path):
-                logging.info('[LAUNCHER] Found skin, copying...')
-                assets_dir = os.path.join(MINECRAFT_DIR, 'assets', 'skins')
+                logging.info("[LAUNCHER] Found skin, copying...")
+                assets_dir = os.path.join(MINECRAFT_DIR, "assets", "skins")
                 os.makedirs(assets_dir, exist_ok=True)
-                shutil.copy(skin_path, os.path.join(assets_dir, f'{username}.png'))
+                shutil.copy(
+                    skin_path, os.path.join(assets_dir, f"{username}.png"),
+                )
 
             # Handle authlib for Ely.by
-            if hasattr(self, 'ely_session') and self.ely_session:
-                logging.info('[LAUNCHER] Ely.by session detected, checking authlib...')
+            if hasattr(self, "ely_session") and self.ely_session:
+                logging.info(
+                    "[LAUNCHER] Ely.by session detected, checking authlib...",
+                )
                 if not os.path.exists(AUTHLIB_JAR_PATH):
-                    logging.info('[LAUNCHER] Downloading authlib-injector...')
+                    logging.info("[LAUNCHER] Downloading authlib-injector...")
                     if not download_authlib_injector():
                         QMessageBox.critical(
                             self,
-                            'Ошибка',
-                            'Не удалось загрузить Authlib Injector',
+                            "Ошибка",
+                            "Не удалось загрузить Authlib Injector",
                         )
                         return
 
             # Save last used settings
-            self.settings['last_version'] = version
-            self.settings['last_loader'] = loader_type
+            self.settings["last_version"] = version
+            self.settings["last_loader"] = loader_type
             save_settings(self.settings)
 
             # Show progress UI
-            self.start_progress_label.setText('Подготовка к запуску...')
+            self.start_progress_label.setText("Подготовка к запуску...")
             self.start_progress_label.setVisible(True)
             self.start_progress.setVisible(True)
             QApplication.processEvents()  # Force UI update
 
-            logging.info('[LAUNCHER] Starting launch thread...')
+            logging.info("[LAUNCHER] Starting launch thread...")
             self.launch_thread.launch_setup(
                 version,
                 username,
@@ -2233,19 +2371,19 @@ class MainWindow(QMainWindow):
                 close_on_launch,
             )
             self.launch_thread.start()
-            
+
             # Обновляем статус Discord на "Играет в Minecraft"
             discord_rpc = get_discord_rpc()
             if discord_rpc.is_connected:
                 discord_rpc.set_playing_status(version, loader_type)
 
         except Exception as e:
-            logging.exception(f'[ERROR] Launch failed: {e!s}')
-            logging.exception(f'Game launch failed: {traceback.format_exc()}')
+            logging.exception(f"[ERROR] Launch failed: {e!s}")
+            logging.exception(f"Game launch failed: {traceback.format_exc()}")
             QMessageBox.critical(
                 self,
-                'Ошибка запуска',
-                f'Не удалось запустить игру: {e!s}',
+                "Ошибка запуска",
+                f"Не удалось запустить игру: {e!s}",
             )
 
     def update_progress(self, current: int, total: int, text: str) -> None:
@@ -2258,19 +2396,24 @@ class MainWindow(QMainWindow):
         if is_running:
             self.start_button.setEnabled(False)
             # Показать консоль при запуске, если включена в настройках
-            if hasattr(self.settings_tab, 'show_console_checkbox') and self.settings_tab.show_console_checkbox.isChecked():
+            if (
+                hasattr(self.settings_tab, "show_console_checkbox")
+                and self.settings_tab.show_console_checkbox.isChecked()
+            ):
                 self.console_widget.show_console()
         else:
             self.start_button.setEnabled(True)
             self.start_progress_label.setVisible(False)
             self.start_progress.setVisible(False)
             # Скрыть консоль после запуска, если включена соответствующая настройка
-            if (hasattr(self.settings_tab, 'hide_console_checkbox') and 
-                self.settings_tab.hide_console_checkbox.isChecked() and
-                hasattr(self.settings_tab, 'show_console_checkbox') and 
-                self.settings_tab.show_console_checkbox.isChecked()):
+            if (
+                hasattr(self.settings_tab, "hide_console_checkbox")
+                and self.settings_tab.hide_console_checkbox.isChecked()
+                and hasattr(self.settings_tab, "show_console_checkbox")
+                and self.settings_tab.show_console_checkbox.isChecked()
+            ):
                 self.console_widget.hide_console()
-            
+
             # Обновляем статус Discord на "В меню лаунчера"
             discord_rpc = get_discord_rpc()
             if discord_rpc.is_connected:
@@ -2282,8 +2425,8 @@ class MainWindow(QMainWindow):
             self.console_widget.add_log_with_color(message)
 
     def show_message_of_the_day(self) -> None:
-        if hasattr(self, 'motd_label') and self.settings.get('show_motd', True):
+        if hasattr(self, "motd_label") and self.settings.get("show_motd", True):
             message = random.choice(constants.MOTD_MESSAGES)
-            self.motd_label.setText(f'💬 <i>{message}</i>')
+            self.motd_label.setText(f"💬 <i>{message}</i>")
         else:
             self.motd_label.clear()
