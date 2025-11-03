@@ -2,13 +2,10 @@ import sys
 import os
 import atexit
 
-# Добавляем путь к модулям СНАЧАЛА
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'src'))
 
-# ПОТОМ импортируем
 from config import LOG_FILE, MINECRAFT_DIR
 
-# Создаём директорию
 os.makedirs(MINECRAFT_DIR, exist_ok=True)
 
 import logging

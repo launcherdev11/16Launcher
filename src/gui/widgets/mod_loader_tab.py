@@ -22,26 +22,14 @@ class ModLoaderTab(QWidget):
         super().__init__(parent)
         self.loader_type = loader_type
         self.setup_ui()
-        # Загружаем версии только для доступных вкладок
-        if self.loader_type not in ['optifine', 'quilt']:
+        # Загружаем версии (кроме временно отключённых вкладок)
+        if self.loader_type not in ['quilt']:
             self.load_mc_versions()
 
     def setup_ui(self):
         layout = QVBoxLayout(self)
         
-        # Для optifine и quilt показываем сообщение о недоступности
-        if self.loader_type == 'optifine':
-            unavailable_label = QLabel('Вкладка OptiFine временно недоступна(')
-            unavailable_label.setAlignment(Qt.AlignCenter)
-            unavailable_label.setStyleSheet("""
-                color: #f1f1f1;
-                font-size: 18px;
-                padding: 50px;
-            """)
-            layout.addWidget(unavailable_label)
-            layout.addStretch()
-            return
-        
+        # Для quilt показываем сообщение о недоступности
         if self.loader_type == 'quilt':
             unavailable_label = QLabel('Вкладка Quilt временно недоступна(')
             unavailable_label.setAlignment(Qt.AlignCenter)

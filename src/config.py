@@ -37,6 +37,13 @@ default_settings = {
     'memory': 4,
     'minecraft_directory': MINECRAFT_DIR,
     'mods_directory': MODS_DIR,
+    'jre_args': '',
+    'java_mode': 'recommended',
+    'java_path': '',
+    'jre_optimized_profile': 'auto',  
+    'update_legacy_ssl': False,
+    'mc_args': '',
+    'wrapper_cmd': '',  # e.g. "manghoul --dslym %command%"
     'last_username': '',
     'favorites': [],
     'last_version': '',
