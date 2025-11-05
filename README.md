@@ -26,7 +26,7 @@
 
 ---
     
-**16Launcher** - This is a Minecraft launcher with many features, good optimization and user-friendly interface.
+**16Launcher** - is an optimized Minecraft launcher for creating modpacks, downloading mods directly, and launching the game with custom settings.
 
 ## Installation
 
