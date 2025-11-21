@@ -1,5 +1,5 @@
 <p align="center">
-  <a href="https://16luncher.ru"><img src="assets/readme_icon.jpg" alt="16Launcher"></a>
+  <a href="https://16luncher.ru"><img src="assets/readme.png" alt="16Launcher"></a>
   <h1 align="center">16Launcher</h1>
 <p align="center">
   <em>Is an optimized Minecraft launcher for creating modpacks, downloading mods directly, and launching the game with custom settings.</em>
