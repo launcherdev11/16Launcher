@@ -22,7 +22,7 @@
 
 ---
 
-![readme_screen.png](assets/readme_screen.png)
+![readme_screen.png](assets/about.png)
 
 ---
     
