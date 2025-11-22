@@ -15,6 +15,7 @@ from minecraft_launcher_lib.fabric import get_latest_loader_version
 from minecraft_launcher_lib.forge import find_forge_version
 from minecraft_launcher_lib.install import install_minecraft_version
 from PyQt5.QtCore import QThread, pyqtSignal
+import shlex
 
 from config import AUTHLIB_JAR_PATH, MINECRAFT_DIR, ELYBY_HOST
 
@@ -63,6 +64,8 @@ class LaunchThread(QThread):
             # 1. Определение базовых параметров
             launch_version = self.version_id
             is_legacy = self.is_legacy_version(self.version_id)
+            # Рабочая директория — глобальная папка лаунчера
+            self.effective_dir = MINECRAFT_DIR
             options = {
                 'username': self.username,
                 'uuid': str(uuid1()),
@@ -76,6 +79,16 @@ class LaunchThread(QThread):
                 'demo': False,
                 'fullscreen': 'false',
             }
+
+            # Добавляем пользовательские JRE аргументы из настроек
+            try:
+                if hasattr(self.parent_window, 'settings'):
+                    raw_args = (self.parent_window.settings or {}).get('jre_args', '') or ''
+                    if isinstance(raw_args, str) and raw_args.strip():
+                        split_args = shlex.split(raw_args, posix=(os.name != 'nt'))
+                        options['jvmArguments'].extend(split_args)
+            except Exception:
+                logging.exception('Failed to parse custom JRE args; ignoring')
 
             if hasattr(self.parent_window, 'ely_session') and self.parent_window.ely_session:
                 self.log('Applying Ely.by session...')
@@ -110,7 +123,7 @@ class LaunchThread(QThread):
                 self.log('[Quilt] Processing Quilt version...')
                 from minecraft_launcher_lib.quilt import get_quilt_profile
 
-                profile = get_quilt_profile(self.version_id, MINECRAFT_DIR)
+                profile = get_quilt_profile(self.version_id, self.effective_dir)
                 launch_version = profile['version']
                 self.log(f'[Quilt] Launch version: {launch_version}')
 
@@ -118,7 +131,7 @@ class LaunchThread(QThread):
                 self.log('[OptiFine] Processing OptiFine version...')
                 # Ищем установленный профиль OptiFine для выбранной версии MC
                 try:
-                    versions_dir = os.path.join(MINECRAFT_DIR, 'versions')
+                    versions_dir = os.path.join(self.effective_dir, 'versions')
                     candidates = []
                     if os.path.isdir(versions_dir):
                         for name in os.listdir(versions_dir):
@@ -148,7 +161,7 @@ class LaunchThread(QThread):
             # 5. Установка версии если требуется
             self.log(f'[CHECK] Checking version {launch_version}...')
             if not os.path.exists(
-                os.path.join(MINECRAFT_DIR, 'versions', launch_version),
+                os.path.join(self.effective_dir, 'versions', launch_version),
             ):
                 self.log('[INSTALL] Installing version...')
                 # используем полноценные функции обратного вызова, чтобы и прогресс и логи приходили в UI
@@ -177,7 +190,7 @@ class LaunchThread(QThread):
 
                 install_minecraft_version(
                     versionid=launch_version,
-                    minecraft_directory=MINECRAFT_DIR,
+                    minecraft_directory=self.effective_dir,
                     callback={
                         'setStatus': set_status,
                         'setProgress': set_progress,
@@ -189,15 +202,91 @@ class LaunchThread(QThread):
             self.log('[BUILD] Building command...')
             command = get_minecraft_command(
                 version=launch_version,
-                minecraft_directory=MINECRAFT_DIR,
+                minecraft_directory=self.effective_dir,
                 options=options,
             )
+
+            # Добавляем оптимизационные профили JVM (поверх Xmx/Xms, до пользовательских аргументов уже добавленных выше)
+            try:
+                settings_obj = getattr(self.parent_window, 'settings', {}) or {}
+                preset = settings_obj.get('jre_optimized_profile', 'auto')
+                preset_args = []
+                if preset in ('auto', 'g1gc'):
+                    preset_args = [
+                        '-XX:+UseG1GC',
+                        '-XX:+UnlockExperimentalVMOptions',
+                        '-XX:G1NewSizePercent=20',
+                        '-XX:G1ReservePercent=20',
+                        '-XX:MaxGCPauseMillis=50',
+                        '-XX:G1HeapRegionSize=16M',
+                    ]
+                elif preset == 'none':
+                    preset_args = []
+                if preset_args:
+                    # Вставляем после первых двух Xmx/Xms
+                    insert_pos = 2 if len(command) > 2 else 1
+                    # Найдём место среди jvm args: команда обычно начинается с java, затем jvm args до "-cp"
+                    try:
+                        cp_index = command.index('-cp') if '-cp' in command else 2
+                        command = command[:cp_index] + preset_args + command[cp_index:]
+                    except Exception:
+                        command = command[:insert_pos] + preset_args + command[insert_pos:]
+            except Exception:
+                logging.exception('Failed to apply optimized JVM preset')
+
+            # Обновлять устаревшие SSL-сертификаты (Windows trust store)
+            try:
+                settings_obj = getattr(self.parent_window, 'settings', {}) or {}
+                if bool(settings_obj.get('update_legacy_ssl', False)):
+                    ssl_flag = '-Djavax.net.ssl.trustStoreType=Windows-ROOT'
+                    try:
+                        cp_index = command.index('-cp') if '-cp' in command else 2
+                        command = command[:cp_index] + [ssl_flag] + command[cp_index:]
+                    except Exception:
+                        command.insert(1, ssl_flag)
+            except Exception:
+                logging.exception('Failed to apply legacy SSL setting')
+
+            # Пользовательский путь к Java
+            try:
+                settings_obj = getattr(self.parent_window, 'settings', {}) or {}
+                java_mode = settings_obj.get('java_mode', 'recommended')
+                java_path = settings_obj.get('java_path', '')
+                if java_mode == 'custom' and isinstance(java_path, str) and java_path.strip():
+                    command[0] = java_path.strip()
+            except Exception:
+                logging.exception('Failed to apply custom Java path')
+
+            # Аргументы Minecraft (добавляем в конец)
+            try:
+                settings_obj = getattr(self.parent_window, 'settings', {}) or {}
+                mc_raw = settings_obj.get('mc_args', '') or ''
+                if isinstance(mc_raw, str) and mc_raw.strip():
+                    mc_parts = shlex.split(mc_raw, posix=(os.name != 'nt'))
+                    command = command + mc_parts
+            except Exception:
+                logging.exception('Failed to append Minecraft args')
             # Обрезаем/маскируем чувствительные части, если нужно — тут просто логим команду
             try:
                 command_str = ' '.join(command)
             except Exception:
                 command_str = str(command)
             self.log(f'[BUILD] Final command: {command_str}')
+
+            # Команда-обёртка: подставляем %command%
+            exec_command = command
+            use_shell = False
+            try:
+                settings_obj = getattr(self.parent_window, 'settings', {}) or {}
+                wrapper = settings_obj.get('wrapper_cmd', '') or ''
+                if isinstance(wrapper, str) and wrapper.strip():
+                    quoted = ' '.join(shlex.quote(p) for p in command)
+                    wrapper_str = wrapper.replace('%command%', quoted)
+                    exec_command = wrapper_str
+                    use_shell = True
+                    self.log(f'[BUILD] Wrapper applied: {wrapper_str}')
+            except Exception:
+                logging.exception('Failed to apply wrapper command')
 
             # 7. Запуск процесса
             self.log('[LAUNCH] Starting Minecraft process...')
@@ -207,10 +296,11 @@ class LaunchThread(QThread):
                 creation_flags = subprocess.CREATE_NEW_PROCESS_GROUP | subprocess.CREATE_NO_WINDOW
             
             minecraft_process = subprocess.Popen(
-                command,
+                exec_command,
                 creationflags=creation_flags,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
+                shell=use_shell,
             )
 
             # (опционально) читать stdout/stderr и стримить в лог — сейчас просто сообщение
@@ -275,7 +365,8 @@ class LaunchThread(QThread):
     def apply_legacy_patch(self, version: str):
         """Применяет патч для старых версий"""
         try:
-            jar_path = os.path.join(MINECRAFT_DIR, 'versions', version, f'{version}.jar')
+            target_dir = getattr(self, 'effective_dir', MINECRAFT_DIR)
+            jar_path = os.path.join(target_dir, 'versions', version, f'{version}.jar')
 
             if not os.path.exists(jar_path):
                 raise Exception('JAR file not found')

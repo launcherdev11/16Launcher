@@ -1,0 +1,57 @@
+name: Build and Release 16Launcher
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  build-windows-release:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install dependencies
+        shell: powershell
+        run: |
+          python -m pip install --upgrade pip wheel setuptools
+          pip install pyinstaller==6.10.0
+          pip install minecraft-launcher-lib==7.1 requests==2.32.5 pyqt5==5.15.11 pyqt5-qt5==5.15.2 beautifulsoup4==4.12.2 pypresence==4.2.1
+
+      - name: Install Inno Setup
+        shell: powershell
+        run: |
+          choco install innosetup --yes --no-progress
+
+      - name: Build application with PyInstaller
+        shell: powershell
+        run: |
+          pyinstaller -y 16Launcher.spec
+
+      - name: Build installer with Inno Setup
+        shell: powershell
+        run: |
+          $iscc = (Get-Command iscc.exe).Source
+          & $iscc 16Launcher_Setup.iss
+
+      - name: Generate SHA256SUMS
+        shell: powershell
+        run: |
+          Get-FileHash .\installer_output\16Launcher_Setup.exe -Algorithm SHA256 | %% { "$($_.Hash.ToLower())  16Launcher_Setup.exe" } | Out-File -Encoding ascii .\installer_output\SHA256SUMS
+
+      - name: Upload release assets
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            installer_output/16Launcher_Setup.exe
+            installer_output/SHA256SUMS
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+

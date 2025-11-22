@@ -1,8 +1,8 @@
 <p align="center">
-  <a href="https://16luncher.ru"><img src="assets/readme_icon.jpg" alt="16Launcher"></a>
+  <a href="https://16luncher.ru"><img src="assets/readme.png" alt="16Launcher"></a>
   <h1 align="center">16Launcher</h1>
 <p align="center">
-  <em>A feature-rich Minecraft launcher with excellent optimization and user-friendly interface</em>
+  <em>Is an optimized Minecraft launcher for creating modpacks, downloading mods directly, and launching the game with custom settings.</em>
 </p>
 
 <p align="center">
@@ -22,11 +22,11 @@
 
 ---
 
-![readme_screen.png](assets/readme_screen.png)
+![readme_screen.png](assets/about.png)
 
 ---
     
-**16Launcher** - This is a Minecraft launcher with many features, good optimization and user-friendly interface.
+**16Launcher** - is an optimized Minecraft launcher for creating modpacks, downloading mods directly, and launching the game with custom settings.
 
 ## Installation
 

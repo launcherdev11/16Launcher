@@ -12,8 +12,8 @@ from typing import Any
 
 import requests
 from minecraft_launcher_lib.utils import get_version_list
-from PyQt5.QtCore import QSize, Qt
-from PyQt5.QtGui import QCloseEvent, QIcon, QPalette, QPixmap
+from PyQt5.QtCore import QSize, Qt, QRegExp
+from PyQt5.QtGui import QCloseEvent, QIcon, QPalette, QPixmap, QRegExpValidator
 from PyQt5.QtWidgets import QGraphicsBlurEffect
 from PyQt5.QtWidgets import (
     QApplication,
@@ -42,7 +42,10 @@ import ely
 from config import AUTHLIB_JAR_PATH, MINECRAFT_DIR, SKINS_DIR
 from ely_by_skin_manager import ElyBySkinManager
 from ely_skin_manager import ElySkinManager
+from discord_rpc import get_discord_rpc, init_discord_rpc, shutdown_discord_rpc
 from translator import Translator
+from version import VERSION
+from updater import get_latest_release_info, download_installer_with_verify
 from util import (
     download_authlib_injector,
     generate_random_username,
@@ -154,7 +157,7 @@ class MainWindow(QMainWindow):
         super().__init__()
 
         self.splash.update_progress(2, 'Установка заголовка окна...')
-        self.setWindowTitle('16Launcher 1.0.3')
+        self.setWindowTitle(f'16Launcher {VERSION}')
 
         self.splash.update_progress(3, 'Установка размера окна...')
         self.setFixedSize(1280, 720)
@@ -170,11 +173,11 @@ class MainWindow(QMainWindow):
         self.splash.update_progress(6, 'Загружаем настройки')
         self.settings = load_settings()
 
-        self.splash.update_progress(7, 'Загружаем сессию через ely')
-        self.setup_ely_auth()
-
-        self.splash.update_progress(19, 'Устанавливаем никнейм')
+        self.splash.update_progress(7, 'Устанавливаем никнейм')
         self.last_username = self.settings.get('last_username', '')
+
+        self.splash.update_progress(8, 'Загружаем сессию через ely')
+        self.setup_ely_auth()
 
         self.splash.update_progress(20, 'Постанавливаем избранные версии')
         self.favorites = self.settings.get('favorites', [])
@@ -256,6 +259,79 @@ class MainWindow(QMainWindow):
         self.splash.close()
         logging.debug('Инициализация завершена')
         del self.splash
+        
+        # Инициализируем Discord Rich Presence
+        logging.info('Инициализация Discord Rich Presence...')
+        init_discord_rpc()
+        
+        # Устанавливаем начальный статус
+        discord_rpc = get_discord_rpc()
+        if discord_rpc.is_connected:
+            discord_rpc.set_menu_status()
+
+        # Проверка обновлений при старте
+        try:
+            if self.settings.get('check_updates_on_start', True):
+                self.check_for_updates(auto=self.settings.get('auto_update', False))
+        except Exception as e:
+            logging.exception(f'[UPDATER] Ошибка проверки обновлений при старте: {e}')
+
+    def check_for_updates(self, auto: bool = False) -> None:
+        info = get_latest_release_info()
+        if not info or not info.has_update or not info.setup_url:
+            return
+
+        latest = info.latest_version
+        if auto:
+            self.perform_update(info)
+            return
+
+        reply = QMessageBox.question(
+            self,
+            'Обновление доступно',
+            f'Доступна новая версия {latest}. Установить сейчас?',
+            QMessageBox.Yes | QMessageBox.No,
+            QMessageBox.Yes,
+        )
+        if reply == QMessageBox.Yes:
+            self.perform_update(info)
+
+    def perform_update(self, info) -> None:
+        try:
+            self.start_progress_label.setText('Скачивание обновления...')
+            self.start_progress_label.setVisible(True)
+            self.start_progress.setVisible(True)
+            QApplication.processEvents()
+
+            installer_path = download_installer_with_verify(info.setup_url, info.sha256_url)
+            if not installer_path:
+                QMessageBox.critical(self, 'Ошибка', 'Не удалось скачать обновление.')
+                self.start_progress_label.setVisible(False)
+                self.start_progress.setVisible(False)
+                return
+
+            # Запуск Inno Setup установщика в тихом режиме
+            args = [
+                installer_path,
+                '/VERYSILENT',
+                '/SUPPRESSMSGBOXES',
+                '/NORESTART',
+                '/CLOSEAPPLICATIONS',
+                '/RESTARTAPPLICATIONS',
+            ]
+            try:
+                subprocess.Popen(args)
+            except Exception as e:
+                logging.exception(f'[UPDATER] Не удалось запустить установщик: {e}')
+                QMessageBox.critical(self, 'Ошибка', 'Не удалось запустить установщик обновления.')
+                return
+
+            # Закрываем лаунчер, установщик перезапустит приложение при необходимости
+            QApplication.processEvents()
+            self.close()
+        finally:
+            self.start_progress_label.setVisible(False)
+            self.start_progress.setVisible(False)
 
 
     def setup_modloader_tabs(self) -> None:
@@ -409,7 +485,18 @@ class MainWindow(QMainWindow):
         self.username = CustomLineEdit(self.game_tab)
         self.username.setPlaceholderText('Введите имя')
         self.username.setMinimumHeight(40)
-        self.username.setText(self.last_username)
+        # Разрешаем латиницу, цифры и популярные спецсимволы (без пробелов)
+        self.username.setValidator(
+            QRegExpValidator(
+                QRegExp('^[A-Za-z0-9()\[\]\{\}\._\-!@#$%^&+=~`,]*$'),
+                self,
+            )
+        )
+        # Устанавливаем username из сохранённой сессии или последнего использованного
+        if hasattr(self, 'ely_session') and self.ely_session:
+            self.username.setText(self.ely_session['username'])
+        else:
+            self.username.setText(self.last_username)
 
         self.username.setStyleSheet("""
             QLineEdit {
@@ -453,6 +540,11 @@ class MainWindow(QMainWindow):
         self.random_name_button.clicked.connect(self.set_random_username)
 
         self.username.set_button(self.random_name_button)
+
+        # Если активна сессия Ely.by — запрещаем изменение ника и отключаем рандом
+        if hasattr(self, 'ely_session') and self.ely_session:
+            self.username.setReadOnly(True)
+            self.random_name_button.setEnabled(False)
 
         form_layout.addLayout(top_row)
 
@@ -713,7 +805,12 @@ class MainWindow(QMainWindow):
                     'token': ely.token(),
                 }
                 self.splash.update_progress(11, 'Устанавливаем никнейм')
-                self.username.setText(self.ely_session['username'])
+                # Устанавливаем username только если UI уже создан
+                if hasattr(self, 'username') and self.username is not None:
+                    self.username.setText(self.ely_session['username'])
+                else:
+                    # Сохраняем для последующей установки после создания UI
+                    self.last_username = self.ely_session['username']
                 self.splash.update_progress(12, 'Обновляем интерфейс')
                 self.update_ely_ui(True)
 
@@ -782,6 +879,18 @@ class MainWindow(QMainWindow):
 
     def handle_tab_changed(self, index: int) -> None:
         """Обработчик смены вкладок"""
+        # Обновляем статус Discord в зависимости от активной вкладки
+        discord_rpc = get_discord_rpc()
+        if not discord_rpc.is_connected:
+            return
+        
+        tab_names = ['Запуск игры', 'Моды', 'Мои сборки']
+        if index < len(tab_names):
+            status_details = f'Просматривает {tab_names[index]}'
+            discord_rpc.update_status(
+                state=status_details,
+                details='В лаунчере',
+            )
 
     def update_login_button_text(self) -> None:
         self.ely_login_button.setText(
@@ -792,6 +901,11 @@ class MainWindow(QMainWindow):
         """Переключает на вкладку с игрой"""
         self.stacked_widget.setCurrentWidget(self.tab_widget)
         self.tabs.setCurrentIndex(0)
+        
+        # Обновляем статус Discord
+        discord_rpc = get_discord_rpc()
+        if discord_rpc.is_connected:
+            discord_rpc.set_menu_status()
 
     def toggle_theme(self) -> None:
         current_theme = getattr(self, 'current_theme', 'dark')
@@ -814,12 +928,29 @@ class MainWindow(QMainWindow):
     def show_settings_tab(self) -> None:
         """Переключает на вкладку с настройками"""
         self.stacked_widget.setCurrentWidget(self.settings_tab)
+        
+        # Обновляем статус Discord
+        discord_rpc = get_discord_rpc()
+        if discord_rpc.is_connected:
+            discord_rpc.update_status(
+                state='Просматривает настройки',
+                details='В лаунчере',
+            )
 
     def update_ely_ui(self, logged_in: bool) -> None:
         """Обновляет UI в зависимости от статуса авторизации"""
+        # Проверяем, что UI элементы уже созданы
+        if not hasattr(self, 'ely_login_button') or not hasattr(self, 'change_skin_button'):
+            return
+            
         if logged_in:
             self.ely_login_button.setVisible(False)
             self.change_skin_button.setVisible(True)
+            # Блокируем изменение никнейма при активной сессии Ely.by
+            if hasattr(self, 'username') and self.username is not None:
+                self.username.setReadOnly(True)
+            if hasattr(self, 'random_name_button') and self.random_name_button is not None:
+                self.random_name_button.setEnabled(False)
             self.change_skin_button.setStyleSheet("""
                 QPushButton {
                     background-color: rgba(40, 167, 69, 0.9);
@@ -836,6 +967,11 @@ class MainWindow(QMainWindow):
         else:
             self.ely_login_button.setVisible(True)
             self.change_skin_button.setVisible(False)
+            # Разблокируем изменение никнейма при отсутствии сессии Ely.by
+            if hasattr(self, 'username') and self.username is not None:
+                self.username.setReadOnly(False)
+            if hasattr(self, 'random_name_button') and self.random_name_button is not None:
+                self.random_name_button.setEnabled(True)
 
     def handle_ely_login(self) -> None:
         """Обработчик кнопки входа/выхода"""
@@ -848,48 +984,158 @@ class MainWindow(QMainWindow):
             self.settings_tab.update_logout_button_visibility()
 
     def ely_login(self) -> None:
-        """Диалог ввода логина/пароля"""
-        email, ok = QInputDialog.getText(
-            self,
-            'Вход',
-            'Введите email Ely.by:',
-            QLineEdit.Normal,
-            '',
-        )
-        if not ok or not email:
-            return
+        """Окно авторизации Ely.by (единое поле ввода + регистрация)"""
+        dialog = QDialog(self)
+        dialog.setWindowTitle('Вход в Ely.by')
+        dialog.setFixedSize(380, 240)
 
-        password, ok = QInputDialog.getText(
-            self,
-            'Вход',
-            'Введите пароль:',
-            QLineEdit.Password,
-            '',
-        )
-        if not ok or not password:
-            return
+        layout = QVBoxLayout(dialog)
+        layout.setContentsMargins(20, 20, 20, 20)
+        layout.setSpacing(12)
 
-        try:
-            self.ely_session = ely.auth_password(email, password)
-            
-            # Сохраняем через старый механизм (для совместимости)
-            ely.write_login_data(
-                {
-                    'username': self.ely_session['username'],
-                    'uuid': self.ely_session['uuid'],
-                    'token': self.ely_session['token'],
-                    'logged_in': True,
-                }
-            )
-            
-            # Сохраняем через новый механизм (в settings.json)
-            save_ely_session(self.settings, self.ely_session)
-            
-            self.update_ely_ui(True)
-            self.username.setText(self.ely_session['username'])
-            QMessageBox.information(self, 'Успешно', 'Авторизация прошла успешно!')
-        except Exception as e:
-            QMessageBox.critical(self, 'Ошибка', str(e))
+        email_input = QLineEdit(dialog)
+        email_input.setPlaceholderText('Email Ely.by')
+        email_input.setMinimumHeight(38)
+        
+        # Пароль с переключателем видимости
+        password_row = QHBoxLayout()
+        password_row.setSpacing(8)
+        password_input = CustomLineEdit(dialog)
+        password_input.setPlaceholderText('Пароль')
+        password_input.setEchoMode(QLineEdit.Password)
+        password_input.setMinimumHeight(38)
+        # Добавим правый отступ под кнопку-глаз
+        password_input.setStyleSheet('QLineEdit { padding-right: 48px; }')
+
+        eye_button = QToolButton(password_input)
+        eye_button.setCursor(Qt.PointingHandCursor)
+        eye_button.setIcon(QIcon(resource_path('assets/hide.png')))
+        eye_button.setIconSize(QSize(22, 22))
+        eye_button.setFixedSize(40, 28)
+        eye_button.setStyleSheet('QToolButton { border: none; background: transparent; }')
+
+        def toggle_password_visibility():
+            if password_input.echoMode() == QLineEdit.Password:
+                password_input.setEchoMode(QLineEdit.Normal)
+                eye_button.setIcon(QIcon(resource_path('assets/show.png')))
+            else:
+                password_input.setEchoMode(QLineEdit.Password)
+                eye_button.setIcon(QIcon(resource_path('assets/hide.png')))
+
+        eye_button.clicked.connect(toggle_password_visibility)
+        password_input.set_button(eye_button)
+
+        layout.addWidget(email_input)
+        layout.addWidget(password_input)
+
+        # Лейбл ошибок под полями (тонкая строка текста)
+        error_label = QLabel('', dialog)
+        error_label.setWordWrap(True)
+        error_label.setStyleSheet('QLabel { color: #dc3545; padding: 4px 2px; background: transparent; }')
+        layout.addWidget(error_label)
+
+        buttons_row = QHBoxLayout()
+
+        register_btn = QPushButton('Нет аккаунта? Регистрация.', dialog)
+        register_btn.setCursor(Qt.PointingHandCursor)
+        register_btn.setFlat(True)
+        register_btn.setStyleSheet('QPushButton { color: #5aa0ff; text-align: left; }\nQPushButton:hover { text-decoration: underline; }')
+        register_btn.clicked.connect(lambda: webbrowser.open('https://account.ely.by/register'))
+        # Отключаем автоактивацию по Enter
+        register_btn.setAutoDefault(False)
+        register_btn.setDefault(False)
+
+        login_btn = QPushButton('Войти', dialog)
+        login_btn.setMinimumHeight(36)
+        # Делает кнопку входа дефолтной для Enter
+        login_btn.setAutoDefault(True)
+        login_btn.setDefault(True)
+
+        buttons_row.addWidget(register_btn)
+        buttons_row.addStretch()
+        buttons_row.addWidget(login_btn)
+
+        layout.addLayout(buttons_row)
+
+        def clear_field_styles():
+            email_input.setStyleSheet('')
+            password_input.setStyleSheet('')
+            error_label.setText('')
+
+        email_input.textChanged.connect(clear_field_styles)
+        password_input.textChanged.connect(clear_field_styles)
+
+        def set_error(widget: QLineEdit, text: str):
+            widget.setStyleSheet('QLineEdit { border: 1px solid #dc3545; }')
+            error_label.setText(text)
+
+        def map_error_message(err_text: str) -> tuple[str, str]:
+            """Возвращает ('email'|'password'|'generic', сообщение)"""
+            text_low = err_text.lower()
+
+            # Обобщённый ответ Ely.by — не указывает, что именно неверно
+            if 'invalid credentials' in text_low or 'invalid username or password' in text_low:
+                return ('generic', 'Неверный e-mail или пароль')
+            if 'user not found' in text_low or 'no such user' in text_low or 'unknownaccount' in text_low:
+                return ('email', 'Мы не нашли пользователя с таким e-mail!')
+            if 'bad credentials' in text_low or 'wrong password' in text_low:
+                return ('password', 'Введён неверный пароль!')
+
+            # По умолчанию — общее сообщение без указания поля
+            return ('generic', 'Не удалось выполнить вход. Проверьте данные.')
+
+        def perform_login():
+            email = email_input.text().strip()
+            password = password_input.text()
+            if not email or not password:
+                # Встроенная ошибка без QMessageBox
+                if not email:
+                    set_error(email_input, 'Введите email Ely.by')
+                elif not password:
+                    set_error(password_input, 'Введите пароль')
+                return
+            try:
+                # ЛОГИКА НЕ МЕНЯЛАСЬ: используем тот же вызов
+                self.ely_session = ely.auth_password(email, password)
+
+                # Сохранение (оба механизма)
+                ely.write_login_data(
+                    {
+                        'username': self.ely_session['username'],
+                        'uuid': self.ely_session['uuid'],
+                        'token': self.ely_session['token'],
+                        'logged_in': True,
+                    }
+                )
+                save_ely_session(self.settings, self.ely_session)
+
+                self.update_ely_ui(True)
+                self.username.setText(self.ely_session['username'])
+                dialog.accept()
+                QMessageBox.information(self, 'Успешно', 'Авторизация прошла успешно!')
+            except Exception as e:
+                # Парсим ответ и отображаем корректно
+                err_text = str(e)
+                try:
+                    err_json = json.loads(err_text)
+                    # Ely.by обычно возвращает {error, errorMessage}
+                    err_text = err_json.get('errorMessage') or err_text
+                except Exception:
+                    pass
+                field, msg = map_error_message(err_text)
+                if field == 'email':
+                    set_error(email_input, msg)
+                elif field == 'password':
+                    set_error(password_input, msg)
+                else:
+                    error_label.setText(msg)
+
+        login_btn.clicked.connect(perform_login)
+        # Enter работает из любого поля
+        password_input.returnPressed.connect(perform_login)
+        email_input.returnPressed.connect(perform_login)
+
+        dialog.exec_()
 
     def start_device_auth(self, dialog: QInputDialog) -> None:
         """Запуск авторизации через device code"""
@@ -1028,22 +1274,7 @@ class MainWindow(QMainWindow):
 
         layout = QVBoxLayout()
 
-        # Кнопка загрузки нового скина
-        upload_btn = QPushButton('Загрузить новый скин')
-        upload_btn.setStyleSheet("""
-            QPushButton {
-                background-color: #28a745;
-                color: white;
-                padding: 12px;
-                border-radius: 5px;
-                font-size: 14px;
-            }
-            QPushButton:hover {
-                background-color: #218838;
-            }
-        """)
-        upload_btn.clicked.connect(lambda: self.upload_new_skin(dialog))
-        layout.addWidget(upload_btn)
+        # (Удалено по требованию) Кнопка загрузки нового скина
 
         # Кнопка сброса скина
         reset_btn = QPushButton('Сбросить скин на стандартный')
@@ -1858,15 +2089,79 @@ class MainWindow(QMainWindow):
             self.settings['hide_console_after_launch'] = self.settings_tab.hide_console_checkbox.isChecked()
             
         save_settings(self.settings)
+        
+        # Отключаем Discord RPC
+        logging.info('Отключение Discord Rich Presence...')
+        shutdown_discord_rpc()
+        
         event.accept()
 
     def close_launcher(self) -> None:
         """Закрывает лаунчер после запуска игры"""
         self.close()
 
+    def is_minecraft_running(self) -> bool:
+        """Проверяет, запущен ли уже процесс Minecraft"""
+        try:
+            if platform.system() == 'Windows':
+                # Для Windows используем tasklist
+                result = subprocess.run(
+                    ['tasklist', '/FI', 'IMAGENAME eq java.exe', '/FO', 'CSV'],
+                    capture_output=True,
+                    text=True,
+                    creationflags=subprocess.CREATE_NO_WINDOW
+                )
+                if result.returncode == 0 and 'java.exe' in result.stdout:
+                    # Дополнительная проверка - ищем процессы с аргументами Minecraft
+                    result_detailed = subprocess.run(
+                        ['wmic', 'process', 'where', 'name="java.exe"', 'get', 'commandline'],
+                        capture_output=True,
+                        text=True,
+                        creationflags=subprocess.CREATE_NO_WINDOW
+                    )
+                    if result_detailed.returncode == 0:
+                        command_lines = result_detailed.stdout.lower()
+                        # Проверяем наличие ключевых слов Minecraft
+                        minecraft_keywords = ['minecraft', 'net.minecraft', 'modlauncher', 'forge', 'fabric']
+                        for keyword in minecraft_keywords:
+                            if keyword in command_lines:
+                                logging.info(f'[LAUNCHER] Found running Minecraft process with keyword: {keyword}')
+                                return True
+            else:
+                # Для Linux/macOS используем ps
+                result = subprocess.run(
+                    ['ps', 'aux'],
+                    capture_output=True,
+                    text=True
+                )
+                if result.returncode == 0:
+                    lines = result.stdout.lower()
+                    minecraft_keywords = ['minecraft', 'net.minecraft', 'modlauncher', 'forge', 'fabric']
+                    for keyword in minecraft_keywords:
+                        if keyword in lines and 'java' in lines:
+                            logging.info(f'[LAUNCHER] Found running Minecraft process with keyword: {keyword}')
+                            return True
+            
+            logging.info('[LAUNCHER] No running Minecraft processes found')
+            return False
+            
+        except Exception as e:
+            logging.exception(f'[LAUNCHER] Error checking for running Minecraft processes: {e}')
+            # В случае ошибки разрешаем запуск (безопасный вариант)
+            return False
+
     def launch_game(self) -> None:
         try:
             logging.info('[LAUNCHER] Starting game launch process...')
+
+            # Проверяем, не запущена ли уже игра (если включена проверка)
+            if self.settings.get('check_running_processes', True) and self.is_minecraft_running():
+                QMessageBox.warning(
+                    self, 
+                    'Игра уже запущена', 
+                    'Minecraft уже запущен! Пожалуйста, закройте текущий экземпляр игры перед запуском нового.\n\nВы можете отключить эту проверку в настройках.'
+                )
+                return
 
             username = self.username.text().strip()
             if not username:
@@ -1886,6 +2181,11 @@ class MainWindow(QMainWindow):
                 f'Memory: {memory_mb}MB, '
                 f'Close on launch: {close_on_launch}',
             )
+            
+            # Обновляем статус Discord
+            discord_rpc = get_discord_rpc()
+            if discord_rpc.is_connected:
+                discord_rpc.set_launching_status()
 
             # Handle Ely.by session
             if not hasattr(self, 'ely_session'):
@@ -1933,6 +2233,11 @@ class MainWindow(QMainWindow):
                 close_on_launch,
             )
             self.launch_thread.start()
+            
+            # Обновляем статус Discord на "Играет в Minecraft"
+            discord_rpc = get_discord_rpc()
+            if discord_rpc.is_connected:
+                discord_rpc.set_playing_status(version, loader_type)
 
         except Exception as e:
             logging.exception(f'[ERROR] Launch failed: {e!s}')
@@ -1965,6 +2270,11 @@ class MainWindow(QMainWindow):
                 hasattr(self.settings_tab, 'show_console_checkbox') and 
                 self.settings_tab.show_console_checkbox.isChecked()):
                 self.console_widget.hide_console()
+            
+            # Обновляем статус Discord на "В меню лаунчера"
+            discord_rpc = get_discord_rpc()
+            if discord_rpc.is_connected:
+                discord_rpc.set_menu_status()
 
     def on_launch_log(self, message: str) -> None:
         """Обработчик логов от launch_thread"""

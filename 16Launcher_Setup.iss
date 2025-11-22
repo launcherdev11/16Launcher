@@ -34,7 +34,7 @@ LicenseFile=License
 ; Выходные файлы
 OutputDir=installer_output
 OutputBaseFilename=16Launcher_Setup
-; SetupIconFile=assets\iconinstall.ico - временно отключено из-за ошибки
+SetupIconFile=assets\iconinstall.ico
 UninstallDisplayIcon={app}\{#MyAppExeName}
 
 ; Сжатие
@@ -44,11 +44,21 @@ SolidCompression=yes
 ; Права администратора
 PrivilegesRequired=admin
 
+; Автоматическое закрытие и перезапуск приложения во время обновления
+CloseApplications=yes
+RestartApplications=yes
+; Стабильный мьютекс приложения для корректного детекта запущенного экземпляра
+AppMutex=16LauncherMutex
+; Ограничение списка закрываемых процессов (не обязательно, но полезно)
+CloseApplicationsFilter=**\16Launcher.exe
+
 ; Современный стиль
 WizardStyle=modern
 
-; Визуальное оформление - временно отключено из-за ошибки с изображениями
-; WizardSmallImageFile=assets\icon.ico
+; Визуальное оформление
+; Use default wizard images (custom images must be valid BMP files)
+; WizardSmallImageFile=assets\wizard_small.bmp
+; WizardImageFile=assets\wizard_large.bmp
 
 ; Языки
 ShowLanguageDialog=yes
@@ -102,9 +112,9 @@ Type: filesandordirs; Name: "{app}\config"
 [Registry]
 ; Регистрация программы в системе
 Root: HKLM; Subkey: "Software\Microsoft\Windows\CurrentVersion\Uninstall\16Launcher"; ValueType: string; ValueName: "DisplayName"; ValueData: "16Launcher"
-Root: HKLM; Subkey: "Software\Microsoft\Windows\CurrentVersion\Uninstall\16Launcher"; ValueType: string; ValueName: "DisplayVersion"; ValueData: "1.0.3"
-Root: HKLM; Subkey: "Software\Microsoft\Windows\CurrentVersion\Uninstall\16Launcher"; ValueType: string; ValueName: "Publisher"; ValueData: "16Launcher Team"
-Root: HKLM; Subkey: "Software\Microsoft\Windows\CurrentVersion\Uninstall\16Launcher"; ValueType: string; ValueName: "DisplayIcon"; ValueData: "{app}\16Launcher.exe"
+Root: HKLM; Subkey: "Software\Microsoft\Windows\CurrentVersion\Uninstall\16Launcher"; ValueType: string; ValueName: "DisplayVersion"; ValueData: "{#MyAppVersion}"
+Root: HKLM; Subkey: "Software\Microsoft\Windows\CurrentVersion\Uninstall\16Launcher"; ValueType: string; ValueName: "Publisher"; ValueData: "{#MyAppPublisher}"
+Root: HKLM; Subkey: "Software\Microsoft\Windows\CurrentVersion\Uninstall\16Launcher"; ValueType: string; ValueName: "DisplayIcon"; ValueData: "{app}\{#MyAppExeName}"
 
 [CustomMessages]
 ; Русские сообщения

@@ -2,8 +2,7 @@ import logging
 import os
 import subprocess
 
-from PyQt5.QtCore import QSize, Qt
-from PyQt5.QtGui import QIcon
+from PyQt5.QtCore import Qt
 from PyQt5.QtWidgets import (
     QApplication,
     QCheckBox,
@@ -12,6 +11,7 @@ from PyQt5.QtWidgets import (
     QHBoxLayout,
     QLabel,
     QLineEdit,
+    QRadioButton,
     QMessageBox,
     QPushButton,
     QScrollArea,
@@ -30,6 +30,17 @@ class SettingsTab(QWidget):
         super().__init__(parent)
         self.parent_window = parent
         self.setup_ui()
+
+    # Блокирующие колесо мыши варианты виджетов
+    class _NoWheelSlider(QSlider):
+        def wheelEvent(self, event):  # type: ignore[override]
+            event.ignore()
+            return
+
+    class _NoWheelCombo(QComboBox):
+        def wheelEvent(self, event):  # type: ignore[override]
+            event.ignore()
+            return
 
     def setup_ui(self):
         app = QApplication.instance()
@@ -89,55 +100,91 @@ class SettingsTab(QWidget):
         appearance_header.setStyleSheet(header_style)
         appearance_layout.addWidget(appearance_header)
 
-        # Язык
-        language_layout = QHBoxLayout()
-        language_label = QLabel('Язык:')
-        language_label.setStyleSheet('color: #ffffff; font-size: 15px;')
-        self.language_combo = QComboBox()
-        self.language_combo.addItem('Русский', 'ru')
-        self.language_combo.addItem('English', 'en')
-        self.language_combo.setStyleSheet("""
-            QComboBox {
-                background-color: #3d3d3d;
-                border: 1px solid #555555;
-                border-radius: 4px;
-                padding: 2px 5px;
-                color: white;
-                min-width: 90px;
-                font-size: 15px;
-            }
-            QComboBox::drop-down {
-                border: none;
-            }
-        """)
-        language_layout.addWidget(language_label)
-        language_layout.addWidget(self.language_combo)
-        appearance_layout.addLayout(language_layout)
+        # Временно скрываем категорию "Внешний вид"
+        appearance_card.setVisible(False)
 
         #консоль
 
-        # Тема
-        self.theme_button = QPushButton()
-        self.theme_button.setFixedHeight(32)
-        self.update_theme_button_icon()
-        self.theme_button.setStyleSheet("""
-            QPushButton {
-                background-color: #3d3d3d;
-                border: 1px solid #555555;
-                border-radius: 5px;
-                padding: 8px;
-                text-align: left;
-                color: white;
-                font-size: 15px;
-            }
-            QPushButton:hover {
-                background-color: #4d4d4d;
-            }
-        """)
-        self.theme_button.clicked.connect(self.toggle_theme)
-        appearance_layout.addWidget(self.theme_button)
-
         settings_layout.addWidget(appearance_card)
+
+        # Java настройки
+        java_card = QWidget()
+        java_card.setStyleSheet(card_style)
+        java_layout = QVBoxLayout(java_card)
+        java_layout.setSpacing(15)
+
+        java_header = QLabel('Настройки Java')
+        java_header.setStyleSheet(header_style)
+        java_layout.addWidget(java_header)
+
+        # Выбор Java: рекоменд., текущая, пользовательская
+        self.java_radio_recommended = QRadioButton('Рекомендуемая')
+        self.java_radio_current = QRadioButton('Текущая (из PATH)')
+        self.java_radio_custom = QRadioButton('Пользовательская')
+        for rb in (self.java_radio_recommended, self.java_radio_current, self.java_radio_custom):
+            rb.setStyleSheet('color: #ffffff; font-size: 15px;')
+        radios_row = QHBoxLayout()
+        radios_row.addWidget(self.java_radio_recommended)
+        radios_row.addWidget(self.java_radio_current)
+        radios_row.addWidget(self.java_radio_custom)
+        java_layout.addLayout(radios_row)
+
+        # Путь к Java + кнопки
+        java_path_row = QHBoxLayout()
+        java_path_label = QLabel('Путь')
+        java_path_label.setStyleSheet('color: #ffffff; font-size: 15px;')
+        self.java_path_edit = QLineEdit()
+        self.java_path_edit.setPlaceholderText('Например: C:/Program Files/Java/jre/bin/java.exe')
+        self.java_path_edit.setStyleSheet("""
+            QLineEdit { background-color: #3d3d3d; border: 1px solid #555555; border-radius: 4px; padding: 4px 6px; color: white; font-size: 15px; }
+            QLineEdit:focus { border: 1px solid #0078d7; }
+        """)
+        self.choose_java_btn = QPushButton('...')
+        self.choose_java_btn.setFixedWidth(32)
+        self.choose_java_btn.setStyleSheet('background-color: #3d3d3d; border: 1px solid #555555; border-radius: 4px; color: white;')
+        self.choose_java_btn.clicked.connect(self._choose_java_path)
+        self.open_java_folder_btn = QPushButton('Открыть папку')
+        self.open_java_folder_btn.setStyleSheet('background-color: #3d3d3d; border: 1px solid #555555; border-radius: 4px; color: white; padding: 2px 10px;')
+        self.open_java_folder_btn.clicked.connect(self._open_java_folder)
+        java_path_row.addWidget(java_path_label)
+        java_path_row.addWidget(self.java_path_edit)
+        java_path_row.addWidget(self.choose_java_btn)
+        java_path_row.addWidget(self.open_java_folder_btn)
+        java_layout.addLayout(java_path_row)
+
+        # Оптимизированные аргументы
+        optimized_row = QHBoxLayout()
+        optimized_label = QLabel('Оптимизированные аргументы')
+        optimized_label.setStyleSheet('color: #ffffff; font-size: 15px;')
+        self.jre_optimized_combo = self._NoWheelCombo()
+        self.jre_optimized_combo.setStyleSheet('color: #ffffff; background-color: #3d3d3d;')
+        self.jre_optimized_combo.addItem('По умолчанию (G1 GC)', 'auto')
+        self.jre_optimized_combo.addItem('G1 GC', 'g1gc')
+        self.jre_optimized_combo.addItem('Без оптимизаций', 'none')
+        optimized_row.addWidget(optimized_label)
+        optimized_row.addWidget(self.jre_optimized_combo)
+        java_layout.addLayout(optimized_row)
+
+        # Java аргументы
+        jre_args_layout = QVBoxLayout()
+        jre_args_label = QLabel('Аргументы Java')
+        jre_args_label.setStyleSheet('color: #ffffff; font-size: 15px;')
+        self.jre_args_edit = QLineEdit()
+        self.jre_args_edit.setPlaceholderText('Например: -agentlib:, -Xms, -Dfile.encoding=UTF-8')
+        self.jre_args_edit.setStyleSheet("""
+            QLineEdit { background-color: #3d3d3d; border: 1px solid #555555; border-radius: 4px; padding: 4px 6px; color: white; font-size: 15px; }
+            QLineEdit:focus { border: 1px solid #0078d7; }
+        """)
+        self.jre_args_edit.textChanged.connect(self._save_jre_args_setting)
+        jre_args_layout.addWidget(jre_args_label)
+        jre_args_layout.addWidget(self.jre_args_edit)
+        java_layout.addLayout(jre_args_layout)
+
+        # Обновлять устаревшие SSL-сертификаты
+        self.ssl_legacy_checkbox = QCheckBox('Обновлять устаревшие SSL-сертификаты')
+        self.ssl_legacy_checkbox.setStyleSheet('color: #ffffff; font-size: 15px;')
+        self.ssl_legacy_checkbox.toggled.connect(self._save_ssl_legacy_setting)
+        java_layout.addWidget(self.ssl_legacy_checkbox)
 
         # Игровые настройки
         game_card = QWidget()
@@ -153,7 +200,7 @@ class SettingsTab(QWidget):
         memory_layout = QVBoxLayout()
         memory_label = QLabel('Оперативная память (ГБ)')
         memory_label.setStyleSheet('color: #ffffff; font-size: 15px;')
-        self.memory_slider = QSlider(Qt.Orientation.Horizontal)
+        self.memory_slider = self._NoWheelSlider(Qt.Orientation.Horizontal)
         self.memory_slider.setRange(1, 32)
         self.memory_slider.setValue(4)
         self.memory_slider.setStyleSheet("""
@@ -185,6 +232,36 @@ class SettingsTab(QWidget):
         memory_layout.addWidget(self.memory_slider)
         memory_layout.addWidget(self.memory_value_label)
         game_layout.addLayout(memory_layout)
+
+        # Аргументы Minecraft
+        mc_args_layout = QVBoxLayout()
+        mc_args_label = QLabel('Аргументы Minecraft')
+        mc_args_label.setStyleSheet('color: #ffffff; font-size: 15px;')
+        self.mc_args_edit = QLineEdit()
+        self.mc_args_edit.setPlaceholderText('Например: --server, --port')
+        self.mc_args_edit.setStyleSheet("""
+            QLineEdit { background-color: #3d3d3d; border: 1px solid #555555; border-radius: 4px; padding: 4px 6px; color: white; font-size: 15px; }
+            QLineEdit:focus { border: 1px solid #0078d7; }
+        """)
+        self.mc_args_edit.textChanged.connect(self._save_mc_args_setting)
+        mc_args_layout.addWidget(mc_args_label)
+        mc_args_layout.addWidget(self.mc_args_edit)
+        game_layout.addLayout(mc_args_layout)
+
+        # Команда-обёртка
+        wrapper_layout = QVBoxLayout()
+        wrapper_label = QLabel('Команда-обёртка (используйте %command%)')
+        wrapper_label.setStyleSheet('color: #ffffff; font-size: 15px;')
+        self.wrapper_edit = QLineEdit()
+        self.wrapper_edit.setPlaceholderText('Например: manghoul --dslym %command%')
+        self.wrapper_edit.setStyleSheet("""
+            QLineEdit { background-color: #3d3d3d; border: 1px solid #555555; border-radius: 4px; padding: 4px 6px; color: white; font-size: 15px; }
+            QLineEdit:focus { border: 1px solid #0078d7; }
+        """)
+        self.wrapper_edit.textChanged.connect(self._save_wrapper_setting)
+        wrapper_layout.addWidget(wrapper_label)
+        wrapper_layout.addWidget(self.wrapper_edit)
+        game_layout.addLayout(wrapper_layout)
 
         #консоль
         self.show_console_checkbox = QCheckBox('Консоль при запуске')
@@ -256,6 +333,28 @@ class SettingsTab(QWidget):
             }
         """)
         game_layout.addWidget(self.close_on_launch_checkbox)
+
+        self.check_running_processes_checkbox = QCheckBox('Проверять запущенные процессы Minecraft')
+        self.check_running_processes_checkbox.setStyleSheet("""
+            QCheckBox {
+                color: #ffffff;
+                spacing: 6px;
+                font-size: 15px;
+            }
+            QCheckBox::indicator {
+                width: 16px;
+                height: 16px;
+                border: 1px solid #555555;
+                border-radius: 2px;
+                background: #3d3d3d;
+            }
+            QCheckBox::indicator:checked {
+                background: #0078d7;
+                border: 1px solid #0078d7;
+            }
+        """)
+        self.check_running_processes_checkbox.setChecked(True)  # По умолчанию включено
+        game_layout.addWidget(self.check_running_processes_checkbox)
 
         # Автоустановка Java (чекбокс в игровых настройках) - скрыт
         self.auto_java_checkbox_game = QCheckBox('Автоматическая установка Java')
@@ -350,6 +449,7 @@ class SettingsTab(QWidget):
         mods_dir_layout.addWidget(self.mods_directory_edit)
         mods_dir_layout.addWidget(self.choose_mods_directory_button)
         directories_layout.addLayout(mods_dir_layout)
+
         settings_layout.addWidget(directories_card)
 
         # Версии Minecraft
@@ -412,32 +512,35 @@ class SettingsTab(QWidget):
         versions_layout.addWidget(self.auto_java_checkbox_versions)
         settings_layout.addWidget(versions_card)
 
-        # Аккаунт Ely.by
-        if hasattr(self.parent_window, 'ely_session') and self.parent_window.ely_session:
-            ely_card = QWidget()
-            ely_card.setStyleSheet(card_style)
-            ely_layout = QVBoxLayout(ely_card)
-            ely_layout.setSpacing(7)
-            ely_header = QLabel('Аккаунт Ely.by')
-            ely_header.setStyleSheet(header_style)
-            ely_layout.addWidget(ely_header)
-            self.ely_logout_button = QPushButton('Выйти из Ely.by')
-            self.ely_logout_button.setStyleSheet("""
-                QPushButton {
-                    background-color: #dc3545;
-                    color: white;
-                    padding: 4px;
-                    border-radius: 4px;
-                    border: none;
-                    font-size: 15px;
-                }
-                QPushButton:hover {
-                    background-color: #c82333;
-                }
-            """)
+        # Аккаунт Ely.by (карточку создаём всегда, кнопку показываем только при входе)
+        ely_card = QWidget()
+        ely_card.setStyleSheet(card_style)
+        ely_layout = QVBoxLayout(ely_card)
+        ely_layout.setSpacing(7)
+        ely_header = QLabel('Аккаунт Ely.by')
+        ely_header.setStyleSheet(header_style)
+        ely_layout.addWidget(ely_header)
+        self.ely_logout_button = QPushButton('Выйти из Ely.by')
+        self.ely_logout_button.setStyleSheet("""
+            QPushButton {
+                background-color: #dc3545;
+                color: white;
+                padding: 4px;
+                border-radius: 4px;
+                border: none;
+                font-size: 15px;
+            }
+            QPushButton:hover {
+                background-color: #c82333;
+            }
+        """)
+        if self.parent_window is not None:
             self.ely_logout_button.clicked.connect(self.parent_window.ely_logout)
-            ely_layout.addWidget(self.ely_logout_button)
-            settings_layout.addWidget(ely_card)
+        ely_layout.addWidget(self.ely_logout_button)
+        # Устанавливаем начальную видимость в зависимости от наличия сессии
+        has_session = bool(getattr(self.parent_window, 'ely_session', None))
+        self.ely_logout_button.setVisible(has_session)
+        settings_layout.addWidget(ely_card)
 
         # Сборки
         builds_card = QWidget()
@@ -465,6 +568,72 @@ class SettingsTab(QWidget):
         builds_layout.addLayout(export_path_layout)
         settings_layout.addWidget(builds_card)
 
+        # Обновления лаунчера
+        updates_card = QWidget()
+        updates_card.setStyleSheet(card_style)
+        updates_layout = QVBoxLayout(updates_card)
+        updates_layout.setSpacing(7)
+        updates_header = QLabel('Обновления')
+        updates_header.setStyleSheet(header_style)
+        updates_layout.addWidget(updates_header)
+
+        self.check_updates_checkbox = QCheckBox('Проверять обновления при запуске')
+        self.check_updates_checkbox.setStyleSheet("""
+            QCheckBox {
+                color: #ffffff;
+                spacing: 6px;
+                font-size: 15px;
+            }
+            QCheckBox::indicator {
+                width: 16px;
+                height: 16px;
+                border: 1px solid #555555;
+                border-radius: 2px;
+                background: #3d3d3d;
+            }
+            QCheckBox::indicator:checked {
+                background: #0078d7;
+                border: 1px solid #0078d7;
+            }
+        """)
+        updates_layout.addWidget(self.check_updates_checkbox)
+
+        self.auto_update_checkbox = QCheckBox('Автоматически устанавливать обновления')
+        self.auto_update_checkbox.setStyleSheet(self.check_updates_checkbox.styleSheet())
+        updates_layout.addWidget(self.auto_update_checkbox)
+
+        # Кнопка ручной проверки обновлений
+        self.check_updates_now_btn = QPushButton('Проверить обновления сейчас')
+        self.check_updates_now_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #3d3d3d;
+                border: 1px solid #555555;
+                border-radius: 4px;
+                padding: 6px 10px;
+                color: white;
+                font-size: 15px;
+            }
+            QPushButton:hover { background-color: #4d4d4d; }
+        """)
+        if self.parent_window and hasattr(self.parent_window, 'check_for_updates'):
+            self.check_updates_now_btn.clicked.connect(lambda: self.parent_window.check_for_updates(auto=False))
+        updates_layout.addWidget(self.check_updates_now_btn)
+
+        # Сохранение настроек обновлений
+        def save_updates_settings():
+            if self.parent_window:
+                self.parent_window.settings['check_updates_on_start'] = self.check_updates_checkbox.isChecked()
+                self.parent_window.settings['auto_update'] = self.auto_update_checkbox.isChecked()
+                save_settings(self.parent_window.settings)
+
+        self.check_updates_checkbox.toggled.connect(save_updates_settings)
+        self.auto_update_checkbox.toggled.connect(save_updates_settings)
+
+        settings_layout.addWidget(updates_card)
+
+        # Переносим настройки Java в самый низ
+        settings_layout.addWidget(java_card)
+
         # Добавляем растягивающийся элемент в конец
         settings_layout.addStretch()
 
@@ -487,10 +656,53 @@ class SettingsTab(QWidget):
             self.directory_edit.setText(settings['minecraft_directory'])
         if 'mods_directory' in settings:
             self.mods_directory_edit.setText(settings['mods_directory'])
+        
+        # Java
+        mode = (settings.get('java_mode') or 'recommended') if isinstance(settings, dict) else 'recommended'
+        if mode == 'current':
+            self.java_radio_current.setChecked(True)
+        elif mode == 'custom':
+            self.java_radio_custom.setChecked(True)
+        else:
+            self.java_radio_recommended.setChecked(True)
+        self.java_path_edit.setText(settings.get('java_path', ''))
+        self.jre_args_edit.setText(settings.get('jre_args', '') if isinstance(settings, dict) else '')
+        self.ssl_legacy_checkbox.setChecked(bool(settings.get('update_legacy_ssl', False)))
+        preset = settings.get('jre_optimized_profile', 'auto')
+        idx = max(0, self.jre_optimized_combo.findData(preset if preset in ('auto','g1gc','none') else 'auto'))
+        self.jre_optimized_combo.setCurrentIndex(idx)
+        # Game
+        self.mc_args_edit.setText(settings.get('mc_args', ''))
+        self.wrapper_edit.setText(settings.get('wrapper_cmd', ''))
+
+        # Enable/disable path controls by mode
+        def update_java_controls():
+            custom = self.java_radio_custom.isChecked()
+            self.java_path_edit.setEnabled(custom)
+            self.choose_java_btn.setEnabled(custom)
+            self.open_java_folder_btn.setEnabled(custom and bool(self.java_path_edit.text()))
+            # Save selection
+            if self.parent_window:
+                self.parent_window.settings['java_mode'] = 'custom' if self.java_radio_custom.isChecked() else ('current' if self.java_radio_current.isChecked() else 'recommended')
+                save_settings(self.parent_window.settings)
+        self.java_radio_recommended.toggled.connect(update_java_controls)
+        self.java_radio_current.toggled.connect(update_java_controls)
+        self.java_radio_custom.toggled.connect(update_java_controls)
+        self.java_path_edit.textChanged.connect(self._save_java_path_setting)
+        update_java_controls()
+
+        
+        if 'jre_args' in settings:
+            try:
+                self.jre_args_edit.setText(str(settings['jre_args'] or ''))
+            except Exception:
+                self.jre_args_edit.setText('')
         if 'show_console' in settings:
             self.show_console_checkbox.setChecked(settings['show_console'])
         if 'hide_console_after_launch' in settings:
             self.hide_console_checkbox.setChecked(settings['hide_console_after_launch'])
+        if 'check_running_processes' in settings:
+            self.check_running_processes_checkbox.setChecked(settings['check_running_processes'])
         if 'auto_install_java' in settings:
             checked = bool(settings['auto_install_java'])
             self.auto_java_checkbox_game.setChecked(checked)
@@ -506,6 +718,12 @@ class SettingsTab(QWidget):
 
         # Обновляем подпись памяти под текущее значение
         self.update_memory_label()
+
+        # Загружаем настройки обновлений
+        if 'check_updates_on_start' in settings:
+            self.check_updates_checkbox.setChecked(bool(settings['check_updates_on_start']))
+        if 'auto_update' in settings:
+            self.auto_update_checkbox.setChecked(bool(settings['auto_update']))
 
         # Принудительно обновляем стили
         self.style().unpolish(self)
@@ -557,49 +775,7 @@ class SettingsTab(QWidget):
             logging.exception(f'Ошибка при открытии директории модов: {e}')
             self.show_error_message('Ошибка при открытии директории модов')
 
-    def setup_language_selector(self):
-        self.language_combo = QComboBox()
-        self.language_combo.addItem('Русский', 'ru')
-        self.language_combo.addItem('English', 'en')
-        self.language_combo.currentIndexChanged.connect(self.change_language)
-
-        language_layout = QHBoxLayout()
-        language_label = QLabel('Язык:')
-        language_label.setStyleSheet('color: #ffffff;')
-        language_layout.addWidget(language_label)
-        language_layout.addWidget(self.language_combo)
-
-        appearance_layout = self.findChild(QVBoxLayout)
-        if appearance_layout:
-            appearance_layout.insertLayout(0, language_layout)
-
-    def change_language(self):
-        lang = self.language_combo.currentData()
-        self.translator.set_language(lang)
-        self.parent_window.retranslate_ui()
-
-    def toggle_theme(self):
-        """Переключает тему между светлой и темной"""
-        current_theme = getattr(self.parent_window, 'current_theme', 'dark')
-        new_theme = 'light' if current_theme == 'dark' else 'dark'
-
-        self.parent_window.apply_dark_theme(
-            new_theme == 'dark',
-        )
-        self.update_theme_button_icon()
-
-        self.parent_window.settings['theme'] = new_theme
-        save_settings(self.parent_window.settings)
-
-    def update_theme_button_icon(self):
-        current_theme = getattr(self.parent_window, 'current_theme', 'dark')
-        if current_theme == 'dark':
-            self.theme_button.setIcon(QIcon(resource_path('assets/sun.png')))
-            self.theme_button.setText(' Светлая тема')
-        else:
-            self.theme_button.setIcon(QIcon(resource_path('assets/moon.png')))
-            self.theme_button.setText(' Тёмная тема')
-        self.theme_button.setIconSize(QSize(24, 24))
+    
 
     def update_logout_button_visibility(self):
         """Обновляет видимость кнопки выхода из Ely.by"""
@@ -609,7 +785,7 @@ class SettingsTab(QWidget):
             return
         
         # Проверяем наличие сессии
-        has_session = hasattr(self.parent(), 'ely_session') and self.parent().ely_session
+        has_session = bool(getattr(self.parent_window, 'ely_session', None))
         self.ely_logout_button.setVisible(has_session)
 
     def choose_directory(self):
@@ -649,6 +825,31 @@ class SettingsTab(QWidget):
             self.parent_window.settings['hide_console_after_launch'] = self.hide_console_checkbox.isChecked()
             save_settings(self.parent_window.settings)
 
+    def _save_jre_args_setting(self):
+        if self.parent_window and hasattr(self.parent_window, 'settings'):
+            self.parent_window.settings['jre_args'] = self.jre_args_edit.text()
+            save_settings(self.parent_window.settings)
+
+    def _save_java_path_setting(self):
+        if self.parent_window and hasattr(self.parent_window, 'settings'):
+            self.parent_window.settings['java_path'] = self.java_path_edit.text()
+            save_settings(self.parent_window.settings)
+
+    def _save_ssl_legacy_setting(self, checked: bool):
+        if self.parent_window and hasattr(self.parent_window, 'settings'):
+            self.parent_window.settings['update_legacy_ssl'] = bool(checked)
+            save_settings(self.parent_window.settings)
+
+    def _save_mc_args_setting(self):
+        if self.parent_window and hasattr(self.parent_window, 'settings'):
+            self.parent_window.settings['mc_args'] = self.mc_args_edit.text()
+            save_settings(self.parent_window.settings)
+
+    def _save_wrapper_setting(self):
+        if self.parent_window and hasattr(self.parent_window, 'settings'):
+            self.parent_window.settings['wrapper_cmd'] = self.wrapper_edit.text()
+            save_settings(self.parent_window.settings)
+
     def _on_auto_java_toggled_from_game(self, checked: bool):
         if self.parent_window:
             self.parent_window.settings['auto_install_java'] = bool(checked)
@@ -669,12 +870,46 @@ class SettingsTab(QWidget):
 
     def closeEvent(self, event):
         if self.parent_window:
-            self.parent_window.settings = {
+            # Обновляем существующий словарь настроек, чтобы не терять неизвестные ключи
+            current = dict(self.parent_window.settings or {})
+            current.update({
                 'close_on_launch': self.close_on_launch_checkbox.isChecked(),
                 'memory': self.memory_slider.value(),
                 'minecraft_directory': self.directory_edit.text(),
                 'mods_directory': self.mods_directory_edit.text(),
+                'java_mode': 'custom' if self.java_radio_custom.isChecked() else ('current' if self.java_radio_current.isChecked() else 'recommended'),
+                'java_path': self.java_path_edit.text(),
+                'jre_optimized_profile': self.jre_optimized_combo.currentData() or 'auto',
+                'jre_args': self.jre_args_edit.text(),
+                'update_legacy_ssl': self.ssl_legacy_checkbox.isChecked(),
+                'mc_args': self.mc_args_edit.text(),
+                'wrapper_cmd': self.wrapper_edit.text(),
                 'show_console': self.show_console_checkbox.isChecked(),
-                'hide_console_after_launch': self.hide_console_checkbox.isChecked()
-            }
-            save_settings(self.parent_window.settings)
+                'hide_console_after_launch': self.hide_console_checkbox.isChecked(),
+                'check_running_processes': self.check_running_processes_checkbox.isChecked(),
+            })
+            self.parent_window.settings = current
+            save_settings(current)
+
+    def _choose_java_path(self):
+        try:
+            path, _ = QFileDialog.getOpenFileName(self, 'Выберите java.exe/java', filter='Java executable (java*);;All files (*)')
+            if path:
+                self.java_path_edit.setText(path)
+                self._save_java_path_setting()
+        except Exception as e:
+            logging.exception(f'Ошибка выбора Java: {e}')
+            self.show_error_message('Ошибка выбора Java')
+
+    def _open_java_folder(self):
+        try:
+            path = self.java_path_edit.text()
+            if not path:
+                return
+            folder = os.path.dirname(path)
+            if os.name == 'nt':
+                subprocess.Popen(f'explorer "{folder}"')
+            elif os.name == 'posix':
+                subprocess.Popen(['xdg-open', folder])
+        except Exception as e:
+            logging.exception(f'Ошибка открытия папки Java: {e}')

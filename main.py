@@ -1,13 +1,11 @@
 import sys
 import os
+import atexit
 
-# Добавляем путь к модулям СНАЧАЛА
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'src'))
 
-# ПОТОМ импортируем
 from config import LOG_FILE, MINECRAFT_DIR
 
-# Создаём директорию
 os.makedirs(MINECRAFT_DIR, exist_ok=True)
 
 import logging
@@ -16,6 +14,7 @@ from PyQt5.QtWidgets import QApplication
 
 from gui.main_window import MainWindow
 from util import setup_directories
+from discord_rpc import shutdown_discord_rpc
 
 logging.basicConfig(
     level=logging.DEBUG,
@@ -30,6 +29,9 @@ logging.basicConfig(
 if __name__ == '__main__':
     logging.info('Initializing directories')
     setup_directories()
+    
+    atexit.register(shutdown_discord_rpc)
+    
     logging.info('Creating application')
     app = QApplication(sys.argv)
     window = MainWindow()

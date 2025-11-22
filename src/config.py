@@ -80,12 +80,22 @@ default_settings = {
     'memory': 4,
     'minecraft_directory': MINECRAFT_DIR,
     'mods_directory': MODS_DIR,
+    'jre_args': '',
+    'java_mode': 'recommended',
+    'java_path': '',
+    'jre_optimized_profile': 'auto',  
+    'update_legacy_ssl': False,
+    'mc_args': '',
+    'wrapper_cmd': '',  # e.g. "manghoul --dslym %command%"
     'last_username': '',
     'favorites': [],
     'last_version': '',
     'last_loader': 'vanilla',
     'show_snapshots': False,
     'auto_install_java': False,
+    # Обновления лаунчера
+    'check_updates_on_start': True,
+    'auto_update': False,
     # Ely.by session data
     'ely_access_token': '',
     'ely_username': '',
