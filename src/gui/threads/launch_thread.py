@@ -16,7 +16,7 @@ from minecraft_launcher_lib.forge import find_forge_version
 from minecraft_launcher_lib.install import install_minecraft_version
 from PyQt5.QtCore import QThread, pyqtSignal
 
-from config import AUTHLIB_JAR_PATH, MINECRAFT_DIR
+from config import AUTHLIB_JAR_PATH, MINECRAFT_DIR, ELYBY_HOST
 
 
 class LaunchThread(QThread):
@@ -84,7 +84,7 @@ class LaunchThread(QThread):
                         'username': self.parent_window.ely_session['username'],
                         'uuid': self.parent_window.ely_session['uuid'],
                         'token': self.parent_window.ely_session['token'],
-                        'jvmArguments': options['jvmArguments'] + [f'-javaagent:{AUTHLIB_JAR_PATH}=ely.by'],
+                        'jvmArguments': options['jvmArguments'] + [f'-javaagent:{AUTHLIB_JAR_PATH}={ELYBY_HOST}'],
                     }
                 )
 
@@ -251,7 +251,7 @@ class LaunchThread(QThread):
             if not self.download_authlib():
                 raise Exception('Failed to download authlib-injector')
 
-        options['jvmArguments'].append(f'-javaagent:{AUTHLIB_JAR_PATH}=ely.by')
+        options['jvmArguments'].append(f'-javaagent:{AUTHLIB_JAR_PATH}={ELYBY_HOST}')
         options['jvmArguments'].append(
             '-Dauthlibinjector.yggdrasil.prefetched={...}',
         )

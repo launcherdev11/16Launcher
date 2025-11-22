@@ -15,9 +15,53 @@ SHADERPACKS_DIR = os.path.join(MINECRAFT_DIR, 'shaderpacks')
 SETTINGS_PATH: str = os.path.join(MINECRAFT_DIR, 'settings.json')
 LOG_FILE: str = os.path.join(MINECRAFT_DIR, 'launcher_log.txt')
 NEWS_FILE: str = os.path.join(MINECRAFT_DIR, 'launcher_news.json')
+"""
 ELYBY_API_URL: str = 'https://authserver.ely.by/api/'
 ELYBY_SKINS_URL: str = 'https://skinsystem.ely.by/skins/'
 ELYBY_AUTH_URL: str = 'https://account.ely.by/oauth2/v1'
+DEVICE_CODE_URL = f'{ELYBY_AUTH_URL}/device/code'
+TOKEN_URL = f'{ELYBY_AUTH_URL}/token'
+"""
+
+ELY = True
+
+if ELY:
+    # Use IP 46.44.16.175 and endpoints from below
+    ELYBY_HOST = 'http://ely.by'
+
+    AUTH_API_URL = '/auth'
+    SESSION_API_URL = '/sessionserver'
+    PROFILE_API_URL = '/api/user/profile'
+
+    # Public Skins System URLs (like Ely.by)
+    SKINS_SYSTEM_URL = '/textures'
+    SKINS_CDN_URL = '/textures'
+
+    # Variables named as in the commented block, using the endpoints above
+    ELYBY_API_URL: str = f'https://authserver.ely.by/auth'
+    ELYBY_SKINS_URL: str = f'{ELYBY_HOST}{SKINS_SYSTEM_URL}/'
+    ELYBY_AUTH_URL: str = f'{ELYBY_HOST}{AUTH_API_URL}'
+    DEVICE_CODE_URL = f'{ELYBY_AUTH_URL}/device/code'
+    TOKEN_URL = f'{ELYBY_AUTH_URL}/token'
+else:
+        # Use IP 46.44.16.175 and endpoints from below
+    ELYBY_HOST = 'http://46.44.16.175:18102'
+
+    AUTH_API_URL = '/auth'
+    SESSION_API_URL = '/sessionserver'
+    PROFILE_API_URL = '/api/user/profile'
+
+    # Public Skins System URLs (like Ely.by)
+    SKINS_SYSTEM_URL = '/textures'
+    SKINS_CDN_URL = '/textures'
+
+    # Variables named as in the commented block, using the endpoints above
+    ELYBY_API_URL: str = f'{ELYBY_HOST}{AUTH_API_URL}'
+    ELYBY_SKINS_URL: str = f'{ELYBY_HOST}{SKINS_SYSTEM_URL}/'
+    ELYBY_AUTH_URL: str = f'{ELYBY_HOST}{AUTH_API_URL}'
+    DEVICE_CODE_URL = f'{ELYBY_AUTH_URL}/device/code'
+    TOKEN_URL = f'{ELYBY_AUTH_URL}/token'
+
 # URL для загрузки/изменения скинов (оставьте пустым '', чтобы отключить функционал загрузки скинов)
 ELYBY_SKIN_UPLOAD_URL: str = ''  # API для загрузки не существует, используйте https://ely.by/skins
 ELYBY_TEXTURES_URL: str = 'https://skinsystem.ely.by/textures/'
@@ -27,8 +71,7 @@ AUTHLIB_INJECTOR_URL: str = 'https://api.github.com/repos/yushijinhun/authlib-in
 AUTHLIB_JAR_PATH: str = os.path.join(MINECRAFT_DIR, 'authlib-injector.jar')
 CLIENT_ID = '16Launcher1'
 # Ely.by OAuth2 endpoints - используем единый базовый URL
-DEVICE_CODE_URL = f'{ELYBY_AUTH_URL}/device/code'
-TOKEN_URL = f'{ELYBY_AUTH_URL}/token'
+
 headers = {'Content-Type': 'application/json', 'User-Agent': '16Launcher/1.0'}
 default_settings = {
     'show_motd': True,

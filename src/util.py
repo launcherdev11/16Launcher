@@ -199,7 +199,7 @@ def authenticate_ely_by(username, password) -> dict[str, Any] | None:
 
 def save_ely_session(settings, session_data):
     """Сохраняет данные сессии Ely.by в настройки"""
-    settings['ely_access_token'] = session_data.get('access_token', '')
+    settings['ely_access_token'] = session_data.get('token', '')
     settings['ely_username'] = session_data.get('username', '')
     settings['ely_uuid'] = session_data.get('uuid', '')
     settings['ely_logged_in'] = True

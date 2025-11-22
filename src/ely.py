@@ -6,9 +6,8 @@ import requests
 from ely_device import authorize_via_device_code
 from flow import logged
 from util import read, write
-from config import ELYBY_API_URL, ELYBY_SKINS_URL, ELYBY_SKIN_UPLOAD_URL, MINECRAFT_DIR
+from config import ELYBY_SKINS_URL, ELYBY_SKIN_UPLOAD_URL, MINECRAFT_DIR, ELYBY_API_URL
 
-BASE_URL = 'https://authserver.ely.by'
 LOGIN_FILE = os.path.join(MINECRAFT_DIR, 'login_data.json')
 
 
@@ -124,23 +123,34 @@ def logout():
 
 def auth_password(email, password):
     """Аутентификация через логин/пароль"""
-    url = 'https://authserver.ely.by/auth/authenticate'
     payload = {
         'username': email,
         'password': password,
-        'clientToken': '16Launcher',
         'requestUser': True,
     }
 
-    response = requests.post(url, json=payload)
-    if response.status_code != 200:
-        raise AuthError(response.text)
+    auth_resp = requests.post(f'{ELYBY_API_URL}/authenticate', json=payload)
+    if auth_resp.status_code != 200:
+        raise AuthError(auth_resp.text)
 
-    data = response.json()
+    # parse authentication response and extract token (support common key names)
+    auth_json = auth_resp.json()
+    token = auth_json.get('access_token') or auth_json.get('accessToken') or auth_json.get('token')
+    if not token:
+        raise AuthError('Authentication succeeded but no access token was returned')
+    
+
+
+    data = auth_resp.json()
+    # try to extract username and uuid from common locations
+    selected = data.get('selectedProfile') or {}
+    username = selected.get('name') or data.get('username') or data.get('name') or ''
+    uuid = selected.get('id') or data.get('uuid') or ''
+
     return {
-        'username': data['selectedProfile']['name'],
-        'uuid': data['selectedProfile']['id'],
-        'token': data['accessToken'],
+        'username': username,
+        'uuid': uuid,
+        'token': token,
     }
 
 
@@ -171,3 +181,6 @@ def upload_skin(file_path, token, variant='classic'):
         return True
     logging.error('Ошибка загрузки скина:', response.status_code, response.text)
     return False
+
+"""
+"""
