@@ -189,7 +189,7 @@ class LaunchThread(QThread):
                         logging.exception('progress emit failed')
 
                 install_minecraft_version(
-                    versionid=launch_version,
+                    version = launch_version,
                     minecraft_directory=self.effective_dir,
                     callback={
                         'setStatus': set_status,
