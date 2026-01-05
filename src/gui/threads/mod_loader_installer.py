@@ -143,7 +143,7 @@ class ModLoaderInstaller(QThread):
             raise ValueError(f'Ошибка установки: {e!s}')
 
     def install_forge(self):
-        """Установка Forge"""
+        """Установка Forge через скачивание установщика с обработкой редиректов"""
         try:
             forge_version = find_forge_version(self.mc_version)
             if not forge_version:
@@ -152,64 +152,274 @@ class ModLoaderInstaller(QThread):
                     f'Forge для {self.mc_version} не найден',
                 )
                 return
-
-            attempts_left = 3
-            last_error: Exception | None = None
-            while attempts_left > 0:
+            
+            # Различные источники для скачивания установщика
+            mirror_sources = [
+                {
+                    'name': 'Прямая ссылка Forge',
+                    'url': f'https://files.minecraftforge.net/net/minecraftforge/forge/{forge_version}/forge-{forge_version}-installer.jar'
+                },
+                {
+                    'name': 'BMCLAPI (основное)',
+                    'url': f'https://bmclapi2.bangbang93.com/maven/net/minecraftforge/forge/{forge_version}/forge-{forge_version}-installer.jar'
+                },
+                {
+                    'name': 'MCBBS Mirror',
+                    'url': f'https://download.mcbbs.net/maven/net/minecraftforge/forge/{forge_version}/forge-{forge_version}-installer.jar'
+                },
+                {
+                    'name': 'Tencent Cloud',
+                    'url': f'https://mirrors.cloud.tencent.com/forge/maven/net/minecraftforge/forge/{forge_version}/forge-{forge_version}-installer.jar'
+                }
+            ]
+            
+            temp_dir = os.path.join(MINECRAFT_DIR, 'temp_forge')
+            os.makedirs(temp_dir, exist_ok=True)
+            
+            installer_path = os.path.join(temp_dir, f'forge-{forge_version}-installer.jar')
+            
+            downloaded = False
+            last_error = None
+            
+            # Пробуем скачать с разных источников
+            for source in mirror_sources:
                 try:
-                    install_forge_version(
-                        forge_version,
+                    self.progress_signal.emit(10, 100, f'Пробуем: {source["name"]}')
+                    logging.info(f'Пробуем скачать с: {source["url"]}')
+                    
+                    # Отключаем автоматические редиректы, чтобы контролировать процесс
+                    session = requests.Session()
+                    # Устанавливаем ограничение на редиректы
+                    session.max_redirects = 3
+                    # Устанавливаем таймаут
+                    session.timeout = (30, 60)  # (connect, read)
+                    
+                    # Делаем запрос без автоматического следования за редиректами
+                    response = session.get(source['url'], stream=True, allow_redirects=False)
+                    
+                    # Обрабатываем редиректы вручную
+                    redirect_count = 0
+                    while response.status_code in [301, 302, 303, 307, 308] and redirect_count < 5:
+                        redirect_url = response.headers.get('Location')
+                        if not redirect_url:
+                            break
+                        
+                        # Проверяем URL редиректа
+                        logging.info(f'Редирект {redirect_count+1}: {redirect_url}')
+                        
+                        # Если редирект ведет на заблокированный домен, пропускаем
+                        if 'mirrors.ustc.edu.cn' in redirect_url or 'cernet.edu.cn' in redirect_url:
+                            logging.warning(f'Пропускаем редирект на потенциально заблокированный домен: {redirect_url}')
+                            break
+                        
+                        # Следуем за редиректом
+                        response = session.get(redirect_url, stream=True, allow_redirects=False)
+                        redirect_count += 1
+                    
+                    # Если после редиректов получили ошибку, пропускаем этот источник
+                    if response.status_code != 200:
+                        logging.warning(f'Сервер вернул код {response.status_code} для {source["url"]}')
+                        continue
+                    
+                    # Проверяем Content-Type
+                    content_type = response.headers.get('Content-Type', '').lower()
+                    if not ('application/java-archive' in content_type or 
+                            'application/x-java-archive' in content_type or
+                            'application/octet-stream' in content_type or
+                            content_type.endswith('/jar')):
+                        logging.warning(f'Неверный Content-Type: {content_type}')
+                        continue
+                    
+                    # Получаем размер файла
+                    content_length = response.headers.get('Content-Length')
+                    if content_length:
+                        expected_size = int(content_length)
+                    else:
+                        expected_size = None
+                    
+                    # Скачиваем файл
+                    with open(installer_path, 'wb') as f:
+                        downloaded_size = 0
+                        for chunk in response.iter_content(chunk_size=8192):
+                            if chunk:
+                                f.write(chunk)
+                                downloaded_size += len(chunk)
+                                
+                                if expected_size:
+                                    progress = int(20 + (downloaded_size / expected_size) * 60)
+                                    self.progress_signal.emit(progress, 100, f'Скачивание: {source["name"]}')
+                    
+                    # Проверяем, что файл скачался полностью
+                    file_size = os.path.getsize(installer_path)
+                    if expected_size and file_size != expected_size:
+                        logging.warning(f'Размер файла не совпадает: ожидалось {expected_size}, получили {file_size}')
+                        os.remove(installer_path)
+                        continue
+                    
+                    # Проверяем, что это действительно JAR файл (по сигнатуре)
+                    if file_size < 100:  # Слишком маленький для JAR
+                        logging.warning(f'Файл слишком маленький: {file_size} байт')
+                        os.remove(installer_path)
+                        continue
+                    
+                    # Проверяем сигнатуру JAR/ZIP файла (первые 4 байта)
+                    with open(installer_path, 'rb') as f:
+                        magic = f.read(4)
+                        if magic != b'PK\x03\x04':  # JAR/ZIP сигнатура
+                            logging.warning(f'Файл не является JAR: сигнатура {magic.hex()}')
+                            os.remove(installer_path)
+                            continue
+                    
+                    downloaded = True
+                    logging.info(f'Успешно скачали с {source["name"]}, размер: {file_size} байт')
+                    break
+                    
+                except requests.exceptions.RequestException as e:
+                    last_error = f'Ошибка сети для {source["name"]}: {e}'
+                    logging.warning(last_error)
+                    continue
+                except Exception as e:
+                    last_error = f'Ошибка при скачивании с {source["name"]}: {e}'
+                    logging.warning(last_error)
+                    continue
+            
+            if not downloaded:
+                # Если не скачали, попробуем через кэшированный прокси
+                try:
+                    self.progress_signal.emit(10, 100, 'Пробуем через прокси...')
+                    proxy_url = f'https://corsproxy.io/?{urllib.parse.quote(f"https://files.minecraftforge.net/net/minecraftforge/forge/{forge_version}/forge-{forge_version}-installer.jar")}'
+                    
+                    response = requests.get(proxy_url, stream=True, timeout=60)
+                    if response.status_code == 200:
+                        with open(installer_path, 'wb') as f:
+                            for chunk in response.iter_content(chunk_size=8192):
+                                if chunk:
+                                    f.write(chunk)
+                        downloaded = True
+                except Exception as e:
+                    logging.warning(f'Не удалось через прокси: {e}')
+            
+            if not downloaded:
+                error_msg = 'Не удалось скачать установщик Forge.'
+                if last_error:
+                    error_msg += f' Последняя ошибка: {last_error}'
+                error_msg += '\n\nРекомендации:\n1. Проверьте подключение к интернету\n2. Попробуйте включить VPN\n3. Скачайте установщик вручную'
+                raise Exception(error_msg)
+            
+            # Устанавливаем Minecraft версию, если её нет
+            version_dir = os.path.join(MINECRAFT_DIR, 'versions', self.mc_version)
+            if not os.path.exists(version_dir):
+                self.progress_signal.emit(85, 100, 'Установка Minecraft...')
+                try:
+                    install_minecraft_version(
+                        self.mc_version,
                         MINECRAFT_DIR,
-                        callback=self.get_callback(),
+                        callback={
+                            'setStatus': lambda text: self.progress_signal.emit(85, 100, text[:100]),
+                            'setProgress': lambda value: self.progress_signal.emit(85 + value//10, 100, ''),
+                            'setMax': lambda value: None,
+                        },
                     )
-                    self.finished_signal.emit(True, f'Forge {forge_version} установлен!')
-                    return
-                except Exception as ie:
-                    last_error = ie
-                    msg = str(ie)
-                    lib_path = None
-                    try:
-                        if 'has the wrong Checksum' in msg:
-                            before = msg.split(' has the wrong Checksum')[0]
-                            start_idx = before.rfind(': ')
-                            candidate = before[start_idx + 2 :] if start_idx != -1 else before
-                            if candidate.lower().endswith('.jar'):
-                                lib_path = candidate.strip()
-                        elif 'WinError 2' in msg or 'file not found' in msg.lower():
-                            if '.jar' in msg:
-                                candidate = msg.split('.jar')[0] + '.jar'
-                                lib_path = candidate[candidate.rfind(' ')+1 :].strip('"')
-                    except Exception:
-                        lib_path = None
-
-                    # Если нашли файл - удалим и попробуем ещё раз
-                    if lib_path and os.path.isabs(lib_path):
-                        try:
-                            if os.path.exists(lib_path):
-                                os.remove(lib_path)
-                            # заодно удалим соседний .sha1, если он есть
-                            sha1_path = lib_path + '.sha1'
-                            if os.path.exists(sha1_path):
-                                os.remove(sha1_path)
-                            # и каталог, если он пустой
-                            parent_dir = os.path.dirname(lib_path)
-                            try:
-                                if os.path.isdir(parent_dir) and not os.listdir(parent_dir):
-                                    os.rmdir(parent_dir)
-                            except Exception:
-                                pass
-                        except Exception:
-                            # даже если удалить не получилось, всё равно повторим попытку
-                            pass
-
-                    attempts_left -= 1
-                    if attempts_left == 0:
-                        raise
-
-            # если сюда дошли, бросим последний пойманный эксепшн
-            if last_error is not None:
-                raise last_error
-
+                except Exception as e:
+                    logging.warning(f'Не удалось установить Minecraft: {e}')
+            
+            # Запускаем установщик Forge
+            self.progress_signal.emit(90, 100, 'Запуск установщика Forge...')
+            
+            # Проверяем Java
+            try:
+                java_version = subprocess.run(['java', '-version'], capture_output=True, text=True, timeout=10)
+                logging.info(f'Java найдена: {java_version.stderr[:100]}')
+            except Exception as e:
+                raise Exception(f'Java не найдена или не работает: {e}')
+            
+            # Запускаем установщик
+            cmd = ['java', '-jar', installer_path, '--installClient']
+            
+            # Для Windows добавляем параметры
+            if os.name == 'nt':
+                cmd.extend(['--installDirectory', MINECRAFT_DIR])
+            else:
+                cmd.extend(['--target', MINECRAFT_DIR])
+            
+            logging.info(f'Запускаем команду: {" ".join(cmd)}')
+            
+            process = subprocess.Popen(
+                cmd,
+                cwd=MINECRAFT_DIR,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                text=True,
+                bufsize=1,
+                universal_newlines=True,
+            )
+            
+            # Читаем вывод
+            output_lines = []
+            start_time = time.time()
+            timeout = 300  # 5 минут
+            
+            for line in process.stdout:
+                if time.time() - start_time > timeout:
+                    process.kill()
+                    raise Exception(f'Установщик завис (таймаут {timeout} секунд)')
+                
+                line = line.strip()
+                if line:
+                    output_lines.append(line)
+                    logging.info(f'Forge установщик: {line}')
+                    
+                    # Показываем прогресс из вывода
+                    if 'Progress' in line or '%' in line or 'Downloading' in line:
+                        self.progress_signal.emit(92, 100, f'Установка: {line[:80]}')
+            
+            # Ждем завершения
+            process.wait(timeout=30)
+            
+            if process.returncode != 0:
+                # Пробуем запустить без дополнительных параметров
+                self.progress_signal.emit(93, 100, 'Повторная попытка установки...')
+                
+                simple_cmd = ['java', '-jar', installer_path]
+                process2 = subprocess.Popen(
+                    simple_cmd,
+                    cwd=MINECRAFT_DIR,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.STDOUT,
+                    text=True,
+                )
+                
+                for line in process2.stdout:
+                    line = line.strip()
+                    if line:
+                        logging.info(f'Forge установщик (вторая попытка): {line}')
+                
+                process2.wait(timeout=120)
+                
+                if process2.returncode != 0:
+                    error_output = '\n'.join(output_lines[-20:]) if output_lines else 'Нет вывода'
+                    raise Exception(f'Установщик завершился с кодом {process2.returncode}:\n{error_output}')
+            
+            # Проверяем, что Forge установился
+            forge_version_dir = os.path.join(MINECRAFT_DIR, 'versions', f'{self.mc_version}-forge-{forge_version.split("-")[-1]}')
+            if not os.path.exists(forge_version_dir):
+                # Ищем любую версию с forge в названии
+                import glob
+                forge_dirs = glob.glob(os.path.join(MINECRAFT_DIR, 'versions', f'*forge*'))
+                if not forge_dirs:
+                    logging.warning(f'Не найдена папка Forge в {forge_version_dir}')
+            
+            # Очищаем временные файлы
+            try:
+                if os.path.exists(installer_path):
+                    os.remove(installer_path)
+                if os.path.exists(temp_dir):
+                    os.rmdir(temp_dir)
+            except Exception as e:
+                logging.warning(f'Не удалось очистить временные файлы: {e}')
+            
+            self.finished_signal.emit(True, f'Forge {forge_version} установлен!')
+            
         except Exception as e:
             self.finished_signal.emit(False, f'Ошибка установки Forge: {e!s}')
             logging.error(f'Forge install failed: {e!s}', exc_info=True)
@@ -394,7 +604,6 @@ class ModLoaderInstaller(QThread):
                 self.finished_signal.emit(False, f'Не удалось переместить мод: {e!s}')
                 return
 
-            # Дополнительно: докачать саму версию Minecraft, если не установлена
             try:
                 version_dir = os.path.join(MINECRAFT_DIR, 'versions', self.mc_version)
                 if not os.path.exists(version_dir):
