@@ -16,6 +16,8 @@ from minecraft_launcher_lib.forge import find_forge_version
 from minecraft_launcher_lib.install import install_minecraft_version
 from PyQt5.QtCore import QThread, pyqtSignal
 import shlex
+import threading
+import time
 
 from config import AUTHLIB_JAR_PATH, MINECRAFT_DIR, ELYBY_HOST
 
@@ -160,9 +162,18 @@ class LaunchThread(QThread):
 
             # 5. Установка версии если требуется
             self.log(f'[CHECK] Checking version {launch_version}...')
-            if not os.path.exists(
-                os.path.join(self.effective_dir, 'versions', launch_version),
-            ):
+            version_dir = os.path.join(self.effective_dir, 'versions', launch_version)
+            jar_path = os.path.join(version_dir, f'{launch_version}.jar')
+            need_install = False
+            try:
+                if not os.path.exists(version_dir):
+                    need_install = True
+                elif not os.path.exists(jar_path) or os.path.getsize(jar_path) == 0:
+                    need_install = True
+            except Exception:
+                need_install = True
+
+            if need_install:
                 self.log('[INSTALL] Installing version...')
                 # используем полноценные функции обратного вызова, чтобы и прогресс и логи приходили в UI
                 def set_status(text):
@@ -189,7 +200,7 @@ class LaunchThread(QThread):
                         logging.exception('progress emit failed')
 
                 install_minecraft_version(
-                    versionid=launch_version,
+                    version = launch_version,
                     minecraft_directory=self.effective_dir,
                     callback={
                         'setStatus': set_status,
@@ -303,8 +314,40 @@ class LaunchThread(QThread):
                 shell=use_shell,
             )
 
-            # (опционально) читать stdout/stderr и стримить в лог — сейчас просто сообщение
+            # читать stdout/stderr в фоне и стримить в лог
+            def _stream_pipe(pipe, prefix):
+                try:
+                    with pipe:
+                        for raw in iter(pipe.readline, b''):
+                            try:
+                                text = raw.decode(errors='replace').rstrip('\n')
+                            except Exception:
+                                text = str(raw)
+                            if text:
+                                self.log(f"{prefix} {text}")
+                except Exception:
+                    logging.exception('Failed to stream process pipe')
+
+            try:
+                t_out = threading.Thread(target=_stream_pipe, args=(minecraft_process.stdout, '[MC OUT]'), daemon=True)
+                t_err = threading.Thread(target=_stream_pipe, args=(minecraft_process.stderr, '[MC ERR]'), daemon=True)
+                t_out.start()
+                t_err.start()
+            except Exception:
+                logging.exception('Failed to start stdout/stderr threads')
+
             self.log('[LAUNCH] Minecraft process started.')
+
+            # Короткая проверка: если процесс быстро завершился, логируем код выхода
+            try:
+                time.sleep(2)
+                rc = minecraft_process.poll()
+                if rc is not None and rc != 0:
+                    self.log(f'[LAUNCH] Minecraft process exited early with return code {rc}')
+                elif rc is not None:
+                    self.log(f'[LAUNCH] Minecraft process exited quickly with return code {rc}')
+            except Exception:
+                logging.exception('Early-exit check failed')
 
             # 8. Закрытие лаунчера если нужно
             if self.close_on_launch:
